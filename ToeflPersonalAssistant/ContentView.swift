@@ -187,7 +187,7 @@ private struct HistoryRecordDetailView: View {
             }
             .navigationTitle("Record Detail")
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem {
                     Button("Close") {
                         onClose()
                     }
