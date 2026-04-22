@@ -12,103 +12,123 @@ struct ContentView: View {
     @State private var selectedRecord: SpeechRecord?
 
     var body: some View {
-        NavigationView {
-            VStack(spacing: 16) {
-                VStack(spacing: 8) {
-                    Text("TOEFL Speaking Practice")
-                        .font(.title2.bold())
-                    Text("Record one speech for up to \(Int(viewModel.maxDuration)) seconds, then get grammar issue suggestions.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
+        NavigationStack {
+            ZStack {
+                List {
+                    Section("Recording Feature") {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("TOEFL Speaking Practice")
+                                .font(.title2.bold())
+                            Text("Record one speech for up to \(Int(viewModel.maxDuration)) seconds, then get grammar issue suggestions.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
 
-                Text("Time: \(viewModel.elapsedTime, specifier: "%.1f")s / \(Int(viewModel.maxDuration))s")
-                    .monospacedDigit()
-                    .font(.headline)
+                            Text("Time: \(viewModel.elapsedTime, specifier: "%.1f")s / \(Int(viewModel.maxDuration))s")
+                                .monospacedDigit()
+                                .font(.headline)
 
-                HStack(spacing: 12) {
-                    Button {
-                        viewModel.startRecording()
-                    } label: {
-                        Label("Start Recording", systemImage: "record.circle.fill")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(viewModel.isRecording || viewModel.isAnalyzing)
+                            HStack(spacing: 12) {
+                                Button {
+                                    viewModel.startRecording()
+                                } label: {
+                                    Label("Start Recording", systemImage: "record.circle.fill")
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(viewModel.isRecording || viewModel.isAnalyzing)
 
-                    Button {
-                        viewModel.stopRecordingAndAnalyze()
-                    } label: {
-                        Label("Stop & Analyze", systemImage: "stop.circle")
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(!viewModel.isRecording)
-                }
+                                Button {
+                                    viewModel.stopRecordingAndAnalyze()
+                                } label: {
+                                    Label("Stop & Analyze", systemImage: "stop.circle")
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(!viewModel.isRecording)
+                            }
 
-                if viewModel.isAnalyzing {
-                    ProgressView("Analyzing...")
-                } else {
-                    Text(viewModel.statusText)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
+                            if viewModel.isAnalyzing {
+                                ProgressView("Analyzing...")
+                            } else {
+                                Text(viewModel.statusText)
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                            }
 
-                if let errorText = viewModel.errorText {
-                    Text(errorText)
-                        .font(.footnote)
-                        .foregroundStyle(.red)
-                        .multilineTextAlignment(.center)
-                }
+                            if let errorText = viewModel.errorText {
+                                Text(errorText)
+                                    .font(.footnote)
+                                    .foregroundStyle(.red)
+                            }
 
-                if !viewModel.latestTranscript.isEmpty {
-                    GroupBox("Latest Transcript") {
-                        Text(viewModel.latestTranscript)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
+                            if viewModel.permissionsDenied {
+                                Button {
+                                    viewModel.openPrivacySettings()
+                                } label: {
+                                    Label("Open Privacy Settings", systemImage: "gearshape")
+                                }
+                                .buttonStyle(.bordered)
+                            }
 
-                if !viewModel.latestIssues.isEmpty {
-                    GroupBox("Detected Grammar Issues") {
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(viewModel.latestIssues) { issue in
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("• \(issue.message)")
-                                    if !issue.snippet.isEmpty {
-                                        Text("\"\(issue.snippet)\"")
-                                            .foregroundStyle(.secondary)
+                            if !viewModel.latestTranscript.isEmpty {
+                                GroupBox("Latest Transcript") {
+                                    Text(viewModel.latestTranscript)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                            }
+
+                            if !viewModel.latestIssues.isEmpty {
+                                GroupBox("Detected Grammar Issues") {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        ForEach(viewModel.latestIssues) { issue in
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text("• \(issue.message)")
+                                                if !issue.snippet.isEmpty {
+                                                    Text("\"\(issue.snippet)\"")
+                                                        .foregroundStyle(.secondary)
+                                                }
+                                            }
+                                            .font(.footnote)
+                                        }
                                     }
                                 }
-                                .font(.footnote)
                             }
                         }
+                        .padding(.vertical, 4)
                     }
-                }
 
-                List {
-                    Section("Recording History") {
+                    Section("Recording History Feature") {
                         if viewModel.history.isEmpty {
                             Text("No recordings yet.")
                                 .foregroundStyle(.secondary)
                         } else {
                             ForEach(viewModel.history) { record in
-                                Button {
-                                    selectedRecord = record
-                                } label: {
+                                HStack(alignment: .top) {
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text("\(record.createdAt, format: .dateTime.month().day().year()) \(record.createdAt, format: .dateTime.hour().minute())")
                                         Text("Duration: \(record.duration, specifier: "%.1f")s | Issues: \(record.issues.count)")
                                             .font(.footnote)
                                             .foregroundStyle(.secondary)
                                     }
+                                    Spacer()
+                                    HStack(spacing: 8) {
+                                        Button("Review") {
+                                            selectedRecord = record
+                                        }
+                                        .buttonStyle(.bordered)
+
+                                        Button(role: .destructive) {
+                                            viewModel.deleteRecord(id: record.id)
+                                        } label: {
+                                            Label("Delete", systemImage: "trash")
+                                        }
+                                        .buttonStyle(.bordered)
+                                    }
                                 }
                             }
-                            .onDelete(perform: viewModel.deleteHistory)
                         }
                     }
                 }
-                .frame(maxHeight: 250)
+                .disabled(selectedRecord != nil)
             }
-            .padding()
             .navigationTitle("Speech Coach")
             .toolbar {
                 ToolbarItem {
@@ -119,8 +139,12 @@ struct ContentView: View {
                     }
                 }
             }
-            .sheet(item: $selectedRecord) { record in
-                HistoryRecordDetailView(record: record)
+
+            if let record = selectedRecord {
+                HistoryRecordDetailView(record: record) {
+                    selectedRecord = nil
+                }
+                .zIndex(1)
             }
         }
     }
@@ -128,9 +152,10 @@ struct ContentView: View {
 
 private struct HistoryRecordDetailView: View {
     let record: SpeechRecord
+    let onClose: () -> Void
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List {
                 Section("Summary") {
                     Text("Created: \(record.createdAt.formatted(date: .abbreviated, time: .shortened))")
@@ -161,7 +186,16 @@ private struct HistoryRecordDetailView: View {
                 }
             }
             .navigationTitle("Record Detail")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Close") {
+                        onClose()
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .background(.background)
     }
 }
 

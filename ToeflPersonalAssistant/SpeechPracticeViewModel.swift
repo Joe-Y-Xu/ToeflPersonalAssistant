@@ -10,6 +10,9 @@ import AVFoundation
 import Speech
 import SwiftUI
 import Combine
+#if os(iOS)
+import UIKit
+#endif
 #if os(macOS)
 import AppKit
 #endif
@@ -58,6 +61,7 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
     @Published var history: [SpeechRecord] = []
     @Published var statusText = "Tap Start Recording and speak for up to 45 seconds."
     @Published var errorText: String?
+    @Published var permissionsDenied = false
 
     let maxDuration: TimeInterval = 45
 
@@ -87,6 +91,7 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
                     statusText = "Microphone or speech recognition permission denied."
                     return
                 }
+                permissionsDenied = false
 
                 try configureAudioSessionIfNeeded()
                 let url = try makeRecordingURL()
@@ -173,9 +178,33 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
         persistHistory()
     }
 
+    func deleteRecord(id: UUID) {
+        history.removeAll { $0.id == id }
+        persistHistory()
+    }
+
     func clearHistory() {
         history.removeAll()
         persistHistory()
+    }
+
+    func openPrivacySettings() {
+#if os(macOS)
+        let microphoneURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
+        let speechURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_SpeechRecognition")
+        let privacyURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy")
+
+        if let microphoneURL {
+            NSWorkspace.shared.open(microphoneURL)
+        } else if let speechURL {
+            NSWorkspace.shared.open(speechURL)
+        } else if let privacyURL {
+            NSWorkspace.shared.open(privacyURL)
+        }
+#elseif os(iOS)
+        guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(settingsURL)
+#endif
     }
 
     private func loadHistory() {
@@ -219,7 +248,10 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
 #endif
 
         if !speechAuthorized || !micAuthorized {
+            permissionsDenied = true
             statusText = permissionStatusMessage(speechAuthorized: speechAuthorized, micAuthorized: micAuthorized)
+        } else {
+            permissionsDenied = false
         }
 
         return speechAuthorized && micAuthorized
