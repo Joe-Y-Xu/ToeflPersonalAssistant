@@ -207,29 +207,78 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
     }
 
     private func requestPermissions() async throws -> Bool {
-        let speechAuthorized = await withCheckedContinuation { continuation in
-            SFSpeechRecognizer.requestAuthorization { status in
-                continuation.resume(returning: status == .authorized)
-            }
-        }
+        let speechStatus = await currentSpeechAuthorizationStatus()
+        let speechAuthorized = speechStatus == .authorized
 
 #if os(iOS) || os(tvOS) || os(visionOS)
-        let micAuthorized = await withCheckedContinuation { continuation in
-            AVAudioSession.sharedInstance().requestRecordPermission { granted in
-                continuation.resume(returning: granted)
-            }
-        }
+        let micAuthorized = await currentIOSMicAuthorizationStatus()
 #elseif os(macOS)
-        let micAuthorized = await withCheckedContinuation { continuation in
-            AVCaptureDevice.requestAccess(for: .audio) { granted in
-                continuation.resume(returning: granted)
-            }
-        }
+        let micAuthorized = await currentMacMicAuthorizationStatus()
 #else
         let micAuthorized = true
 #endif
 
+        if !speechAuthorized || !micAuthorized {
+            statusText = permissionStatusMessage(speechAuthorized: speechAuthorized, micAuthorized: micAuthorized)
+        }
+
         return speechAuthorized && micAuthorized
+    }
+
+    private func currentSpeechAuthorizationStatus() async -> SFSpeechRecognizerAuthorizationStatus {
+        let currentStatus = SFSpeechRecognizer.authorizationStatus()
+        if currentStatus != .notDetermined {
+            return currentStatus
+        }
+
+        return await withCheckedContinuation { continuation in
+            SFSpeechRecognizer.requestAuthorization { status in
+                continuation.resume(returning: status)
+            }
+        }
+    }
+
+#if os(iOS) || os(tvOS) || os(visionOS)
+    private func currentIOSMicAuthorizationStatus() async -> Bool {
+        if AVAudioSession.sharedInstance().recordPermission == .granted {
+            return true
+        }
+        return await withCheckedContinuation { continuation in
+            AVAudioSession.sharedInstance().requestRecordPermission { granted in
+                continuation.resume(returning: granted)
+            }
+        }
+    }
+#endif
+
+#if os(macOS)
+    private func currentMacMicAuthorizationStatus() async -> Bool {
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            return true
+        case .notDetermined:
+            return await withCheckedContinuation { continuation in
+                AVCaptureDevice.requestAccess(for: .audio) { granted in
+                    continuation.resume(returning: granted)
+                }
+            }
+        default:
+            return false
+        }
+    }
+#endif
+
+    private func permissionStatusMessage(speechAuthorized: Bool, micAuthorized: Bool) -> String {
+        if !speechAuthorized && !micAuthorized {
+            return "Speech recognition and microphone permissions are denied. Enable both in System Settings > Privacy & Security."
+        }
+        if !speechAuthorized {
+            return "Speech recognition permission is denied. Enable it in System Settings > Privacy & Security > Speech Recognition."
+        }
+        if !micAuthorized {
+            return "Microphone permission is denied. Enable it in System Settings > Privacy & Security > Microphone."
+        }
+        return "Permissions unavailable."
     }
 
     private func configureAudioSessionIfNeeded() throws {
