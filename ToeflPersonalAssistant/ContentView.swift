@@ -95,7 +95,7 @@ struct ContentView: View {
                                     selectedRecord = record
                                 } label: {
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text(record.createdAt, style: .date) + Text(" ") + Text(record.createdAt, style: .time)
+                                        Text("\(record.createdAt, format: .dateTime.month().day().year()) \(record.createdAt, format: .dateTime.hour().minute())")
                                         Text("Duration: \(record.duration, specifier: "%.1f")s | Issues: \(record.issues.count)")
                                             .font(.footnote)
                                             .foregroundStyle(.secondary)
@@ -111,9 +111,6 @@ struct ContentView: View {
             .padding()
             .navigationTitle("Speech Coach")
             .toolbar {
-                ToolbarItem {
-                    EditButton()
-                }
                 ToolbarItem {
                     if !viewModel.history.isEmpty {
                         Button("Clear") {

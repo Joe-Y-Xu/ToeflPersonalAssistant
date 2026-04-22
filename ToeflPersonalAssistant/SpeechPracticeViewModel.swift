@@ -9,6 +9,7 @@ import Foundation
 import AVFoundation
 import Speech
 import SwiftUI
+import Combine
 #if os(macOS)
 import AppKit
 #endif
@@ -108,14 +109,16 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
 
                 timer?.invalidate()
                 timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-                    guard let self else { return }
-                    guard let startedAt = self.recordingStartedAt else { return }
+                    Task { @MainActor in
+                        guard let self else { return }
+                        guard let startedAt = self.recordingStartedAt else { return }
 
-                    let duration = Date().timeIntervalSince(startedAt)
-                    self.elapsedTime = min(duration, self.maxDuration)
+                        let duration = Date().timeIntervalSince(startedAt)
+                        self.elapsedTime = min(duration, self.maxDuration)
 
-                    if duration >= self.maxDuration {
-                        self.stopRecordingAndAnalyze()
+                        if duration >= self.maxDuration {
+                            self.stopRecordingAndAnalyze()
+                        }
                     }
                 }
             } catch {
