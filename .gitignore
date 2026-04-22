@@ -1,0 +1,10 @@
+# 忽略 Xcode 编译产物
+Build/
+build/
+DerivedData/
+*.build
+*.xcarchive
+
+# 忽略缓存
+.DS_Store
+*.log
