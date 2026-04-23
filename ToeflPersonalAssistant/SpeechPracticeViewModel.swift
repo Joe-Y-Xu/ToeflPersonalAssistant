@@ -5,11 +5,11 @@
 //  Created by Codex on 2026/4/23.
 //
 
-import Foundation
 import AVFoundation
+import Combine
+import Foundation
 import Speech
 import SwiftUI
-import Combine
 #if os(iOS)
 import UIKit
 #endif
@@ -22,11 +22,42 @@ struct GrammarIssue: Codable, Identifiable, Hashable {
     let message: String
     let snippet: String
 
+    var attentionKey: String {
+        Self.makeAttentionKey(from: message)
+    }
+
     init(id: UUID = UUID(), message: String, snippet: String) {
         self.id = id
         self.message = message
         self.snippet = snippet
     }
+
+    nonisolated static func makeAttentionKey(from message: String) -> String {
+        message.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+}
+
+struct AttentionOutcome: Codable, Identifiable, Hashable {
+    enum Status: String, Codable, Hashable {
+        case passed
+        case failed
+    }
+
+    let issueKey: String
+    let title: String
+    let status: Status
+    let matchingIssue: GrammarIssue?
+
+    var id: String { issueKey }
+}
+
+struct AttentionStatistic: Codable, Identifiable, Hashable {
+    let issueKey: String
+    let title: String
+    var passCount: Int
+    var failCount: Int
+
+    var id: String { issueKey }
 }
 
 struct SpeechRecord: Codable, Identifiable, Hashable {
@@ -35,19 +66,46 @@ struct SpeechRecord: Codable, Identifiable, Hashable {
     let duration: TimeInterval
     let transcript: String
     let issues: [GrammarIssue]
+    let attentionModeEnabled: Bool
+    let attentionOutcomes: [AttentionOutcome]
 
     init(
         id: UUID = UUID(),
         createdAt: Date = Date(),
         duration: TimeInterval,
         transcript: String,
-        issues: [GrammarIssue]
+        issues: [GrammarIssue],
+        attentionModeEnabled: Bool = false,
+        attentionOutcomes: [AttentionOutcome] = []
     ) {
         self.id = id
         self.createdAt = createdAt
         self.duration = duration
         self.transcript = transcript
         self.issues = issues
+        self.attentionModeEnabled = attentionModeEnabled
+        self.attentionOutcomes = attentionOutcomes
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case createdAt
+        case duration
+        case transcript
+        case issues
+        case attentionModeEnabled
+        case attentionOutcomes
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        duration = try container.decode(TimeInterval.self, forKey: .duration)
+        transcript = try container.decode(String.self, forKey: .transcript)
+        issues = try container.decode([GrammarIssue].self, forKey: .issues)
+        attentionModeEnabled = try container.decodeIfPresent(Bool.self, forKey: .attentionModeEnabled) ?? false
+        attentionOutcomes = try container.decodeIfPresent([AttentionOutcome].self, forKey: .attentionOutcomes) ?? []
     }
 }
 
@@ -58,14 +116,25 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
     @Published var elapsedTime: TimeInterval = 0
     @Published var latestTranscript = ""
     @Published var latestIssues: [GrammarIssue] = []
+    @Published var latestAttentionOutcomes: [AttentionOutcome] = []
     @Published var history: [SpeechRecord] = []
     @Published var statusText = "Tap Start Recording and speak for up to 45 seconds."
     @Published var errorText: String?
     @Published var permissionsDenied = false
+    @Published var isAttentionModeEnabled = false
+    @Published private(set) var selectedAttentionKeys: Set<String> = []
+    @Published private(set) var attentionStatistics: [AttentionStatistic] = []
 
     let maxDuration: TimeInterval = 45
 
+    var selectedAttentionStatistics: [AttentionStatistic] {
+        attentionStatistics.sorted { $0.title < $1.title }
+    }
+
     private let historyStorageKey = "speechPracticeHistory"
+    private let selectedAttentionStorageKey = "speechPracticeSelectedAttentionKeys"
+    private let attentionStatisticsStorageKey = "speechPracticeAttentionStatistics"
+    private let attentionModeStorageKey = "speechPracticeAttentionModeEnabled"
     private var recorder: AVAudioRecorder?
     private var timer: Timer?
     private var recordingStartedAt: Date?
@@ -79,6 +148,9 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
         jsonEncoder.dateEncodingStrategy = .iso8601
         jsonDecoder.dateDecodingStrategy = .iso8601
         loadHistory()
+        loadAttentionSelections()
+        loadAttentionStatistics()
+        isAttentionModeEnabled = UserDefaults.standard.bool(forKey: attentionModeStorageKey)
     }
 
     func startRecording() {
@@ -108,22 +180,17 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
                 recordingStartedAt = Date()
                 currentRecordingURL = url
 
+                latestAttentionOutcomes = []
                 elapsedTime = 0
                 isRecording = true
-                statusText = "Recording..."
+                statusText = isAttentionModeEnabled
+                    ? "Recording with Attention Mode A enabled."
+                    : "Recording..."
 
                 timer?.invalidate()
                 timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-                    Task { @MainActor in
-                        guard let self else { return }
-                        guard let startedAt = self.recordingStartedAt else { return }
-
-                        let duration = Date().timeIntervalSince(startedAt)
-                        self.elapsedTime = min(duration, self.maxDuration)
-
-                        if duration >= self.maxDuration {
-                            self.stopRecordingAndAnalyze()
-                        }
+                    Task { @MainActor [weak self] in
+                        self?.handleRecordingTimerTick()
                     }
                 }
             } catch {
@@ -157,20 +224,87 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
             do {
                 let transcript = try await transcribeAudioFile(at: fileURL)
                 let issues = analyzeGrammar(in: transcript)
+                let attentionOutcomes = isAttentionModeEnabled
+                    ? Self.buildAttentionOutcomes(
+                        selectedStatistics: selectedAttentionStatistics,
+                        issues: issues
+                    )
+                    : []
 
                 latestTranscript = transcript
                 latestIssues = issues
+                latestAttentionOutcomes = attentionOutcomes
 
-                let record = SpeechRecord(duration: duration, transcript: transcript, issues: issues)
+                if isAttentionModeEnabled {
+                    attentionStatistics = Self.merging(
+                        attentionOutcomes: attentionOutcomes,
+                        into: attentionStatistics
+                    )
+                    persistAttentionStatistics()
+                }
+
+                let record = SpeechRecord(
+                    duration: duration,
+                    transcript: transcript,
+                    issues: issues,
+                    attentionModeEnabled: isAttentionModeEnabled,
+                    attentionOutcomes: attentionOutcomes
+                )
                 history.insert(record, at: 0)
                 persistHistory()
 
-                statusText = issues.isEmpty ? "No obvious grammar issues found." : "Found \(issues.count) possible grammar issue(s)."
+                statusText = makeStatusText(issues: issues, attentionOutcomes: attentionOutcomes)
             } catch {
                 errorText = error.localizedDescription
                 statusText = "Analysis failed."
             }
         }
+    }
+
+    func setAttentionModeEnabled(_ isEnabled: Bool) {
+        isAttentionModeEnabled = isEnabled
+        UserDefaults.standard.set(isEnabled, forKey: attentionModeStorageKey)
+    }
+
+    func toggleAttentionSelection(for issue: GrammarIssue) {
+        let key = issue.attentionKey
+        if selectedAttentionKeys.contains(key) {
+            selectedAttentionKeys.remove(key)
+            attentionStatistics.removeAll { $0.issueKey == key }
+        } else {
+            selectedAttentionKeys.insert(key)
+            if attentionStatistics.contains(where: { $0.issueKey == key }) == false {
+                attentionStatistics.append(
+                    AttentionStatistic(
+                        issueKey: key,
+                        title: issue.message,
+                        passCount: 0,
+                        failCount: 0
+                    )
+                )
+            }
+        }
+
+        persistAttentionSelections()
+        persistAttentionStatistics()
+    }
+
+    func removeAttention(issueKey: String) {
+        selectedAttentionKeys.remove(issueKey)
+        attentionStatistics.removeAll { $0.issueKey == issueKey }
+        persistAttentionSelections()
+        persistAttentionStatistics()
+    }
+
+    func clearAllAttentions() {
+        selectedAttentionKeys.removeAll()
+        attentionStatistics.removeAll()
+        persistAttentionSelections()
+        persistAttentionStatistics()
+    }
+
+    func isAttentionSelected(_ issue: GrammarIssue) -> Bool {
+        selectedAttentionKeys.contains(issue.attentionKey)
     }
 
     func deleteHistory(at offsets: IndexSet) {
@@ -216,6 +350,45 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
     private func persistHistory() {
         guard let data = try? jsonEncoder.encode(history) else { return }
         UserDefaults.standard.set(data, forKey: historyStorageKey)
+    }
+
+    private func loadAttentionSelections() {
+        guard let data = UserDefaults.standard.data(forKey: selectedAttentionStorageKey) else { return }
+        guard let decoded = try? jsonDecoder.decode([String].self, from: data) else { return }
+        selectedAttentionKeys = Set(decoded)
+    }
+
+    private func persistAttentionSelections() {
+        guard let data = try? jsonEncoder.encode(Array(selectedAttentionKeys).sorted()) else { return }
+        UserDefaults.standard.set(data, forKey: selectedAttentionStorageKey)
+    }
+
+    private func loadAttentionStatistics() {
+        guard let data = UserDefaults.standard.data(forKey: attentionStatisticsStorageKey) else { return }
+        guard let decoded = try? jsonDecoder.decode([AttentionStatistic].self, from: data) else { return }
+        attentionStatistics = decoded.filter { selectedAttentionKeys.contains($0.issueKey) }
+    }
+
+    private func persistAttentionStatistics() {
+        let filtered = attentionStatistics.filter { selectedAttentionKeys.contains($0.issueKey) }
+        guard let data = try? jsonEncoder.encode(filtered) else { return }
+        UserDefaults.standard.set(data, forKey: attentionStatisticsStorageKey)
+    }
+
+    private func makeStatusText(issues: [GrammarIssue], attentionOutcomes: [AttentionOutcome]) -> String {
+        if isAttentionModeEnabled {
+            guard selectedAttentionKeys.isEmpty == false else {
+                return "Attention Mode A is on, but no attentions are selected yet."
+            }
+
+            let failedCount = attentionOutcomes.filter { $0.status == .failed }.count
+            let passedCount = attentionOutcomes.filter { $0.status == .passed }.count
+            return "Attention review: \(failedCount) fail(s), \(passedCount) pass(es)."
+        }
+
+        return issues.isEmpty
+            ? "No obvious grammar issues found."
+            : "Found \(issues.count) possible grammar issue(s)."
     }
 
     private func makeRecordingURL() throws -> URL {
@@ -323,20 +496,28 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
 
     private func transcribeAudioFile(at url: URL) async throws -> String {
         guard let speechRecognizer, speechRecognizer.isAvailable else {
-            throw NSError(domain: "SpeechPractice", code: 1, userInfo: [NSLocalizedDescriptionKey: "Speech recognizer is not available right now."])
+            throw NSError(
+                domain: "SpeechPractice",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Speech recognizer is not available right now."]
+            )
         }
 
         let request = SFSpeechURLRecognitionRequest(url: url)
         request.shouldReportPartialResults = false
 
         return try await withCheckedThrowingContinuation { continuation in
+            var didResume = false
+
             speechRecognizer.recognitionTask(with: request) { result, error in
-                if let error {
+                if let error, didResume == false {
+                    didResume = true
                     continuation.resume(throwing: error)
                     return
                 }
 
-                guard let result, result.isFinal else { return }
+                guard let result, result.isFinal, didResume == false else { return }
+                didResume = true
                 continuation.resume(returning: result.bestTranscription.formattedString)
             }
         }
@@ -356,16 +537,31 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
             if normalized.isEmpty { continue }
 
             if let first = normalized.first, first.isLetter, first.isLowercase {
-                issues.append(GrammarIssue(message: "Sentence should start with a capital letter.", snippet: normalized))
+                issues.append(
+                    GrammarIssue(
+                        message: "Sentence should start with a capital letter.",
+                        snippet: normalized
+                    )
+                )
             }
 
             if let last = normalized.last, ![".", "!", "?"].contains(last) {
-                issues.append(GrammarIssue(message: "Sentence may be missing ending punctuation.", snippet: normalized))
+                issues.append(
+                    GrammarIssue(
+                        message: "Sentence may be missing ending punctuation.",
+                        snippet: normalized
+                    )
+                )
             }
 
             let words = normalized.split(separator: " ").map(String.init)
             if words.count < 3 {
-                issues.append(GrammarIssue(message: "Sentence may be too short or a fragment.", snippet: normalized))
+                issues.append(
+                    GrammarIssue(
+                        message: "Sentence may be too short or a fragment.",
+                        snippet: normalized
+                    )
+                )
             }
         }
 
@@ -401,5 +597,55 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
             .replacingOccurrences(of: "\n", with: ". ")
             .split(whereSeparator: { ".!?".contains($0) })
             .map(String.init)
+    }
+
+    private func handleRecordingTimerTick() {
+        guard let startedAt = recordingStartedAt else { return }
+
+        let duration = Date().timeIntervalSince(startedAt)
+        elapsedTime = min(duration, maxDuration)
+
+        if duration >= maxDuration {
+            stopRecordingAndAnalyze()
+        }
+    }
+
+    nonisolated static func buildAttentionOutcomes(
+        selectedStatistics: [AttentionStatistic],
+        issues: [GrammarIssue]
+    ) -> [AttentionOutcome] {
+        selectedStatistics
+            .sorted { $0.title < $1.title }
+            .map { statistic in
+                let matchingIssue = issues.first {
+                    GrammarIssue.makeAttentionKey(from: $0.message) == statistic.issueKey
+                }
+                return AttentionOutcome(
+                    issueKey: statistic.issueKey,
+                    title: statistic.title,
+                    status: matchingIssue != nil ? .failed : .passed,
+                    matchingIssue: matchingIssue
+                )
+            }
+    }
+
+    nonisolated static func merging(
+        attentionOutcomes: [AttentionOutcome],
+        into statistics: [AttentionStatistic]
+    ) -> [AttentionStatistic] {
+        var updated = Dictionary(uniqueKeysWithValues: statistics.map { ($0.issueKey, $0) })
+
+        for outcome in attentionOutcomes {
+            guard var statistic = updated[outcome.issueKey] else { continue }
+            switch outcome.status {
+            case .passed:
+                statistic.passCount += 1
+            case .failed:
+                statistic.failCount += 1
+            }
+            updated[outcome.issueKey] = statistic
+        }
+
+        return Array(updated.values).sorted { $0.title < $1.title }
     }
 }
