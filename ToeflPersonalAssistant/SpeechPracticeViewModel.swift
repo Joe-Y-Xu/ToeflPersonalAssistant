@@ -8,7 +8,6 @@
 import AVFoundation
 import Combine
 import Foundation
-import Speech
 import SwiftUI
 #if os(iOS)
 import UIKit
@@ -162,9 +161,9 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
     private var currentRecordingURL: URL?
     private var recordingStopContinuation: CheckedContinuation<Void, Error>?
     private var audioPlayer: AVAudioPlayer?
-    private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
     private let jsonEncoder = JSONEncoder()
     private let jsonDecoder = JSONDecoder()
+    private let whisperEndpoint = URL(string: "http://127.0.0.1:9000/v1/audio/transcriptions")!
 
     override init() {
         super.init()
@@ -186,7 +185,7 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
             do {
                 let hasPermission = try await requestPermissions()
                 guard hasPermission else {
-                    statusText = "Microphone or speech recognition permission denied."
+                    statusText = "Microphone permission denied."
                     return
                 }
                 permissionsDenied = false
@@ -585,9 +584,6 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
     }
 
     private func requestPermissions() async throws -> Bool {
-        let speechStatus = await currentSpeechAuthorizationStatus()
-        let speechAuthorized = speechStatus == .authorized
-
 #if os(iOS) || os(tvOS) || os(visionOS)
         let micAuthorized = await currentIOSMicAuthorizationStatus()
 #elseif os(macOS)
@@ -596,27 +592,14 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
         let micAuthorized = true
 #endif
 
-        if !speechAuthorized || !micAuthorized {
+        if !micAuthorized {
             permissionsDenied = true
-            statusText = permissionStatusMessage(speechAuthorized: speechAuthorized, micAuthorized: micAuthorized)
+            statusText = permissionStatusMessage(micAuthorized: micAuthorized)
         } else {
             permissionsDenied = false
         }
 
-        return speechAuthorized && micAuthorized
-    }
-
-    private func currentSpeechAuthorizationStatus() async -> SFSpeechRecognizerAuthorizationStatus {
-        let currentStatus = SFSpeechRecognizer.authorizationStatus()
-        if currentStatus != .notDetermined {
-            return currentStatus
-        }
-
-        return await withCheckedContinuation { continuation in
-            SFSpeechRecognizer.requestAuthorization { status in
-                continuation.resume(returning: status)
-            }
-        }
+        return micAuthorized
     }
 
 #if os(iOS) || os(tvOS) || os(visionOS)
@@ -649,13 +632,7 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
     }
 #endif
 
-    private func permissionStatusMessage(speechAuthorized: Bool, micAuthorized: Bool) -> String {
-        if !speechAuthorized && !micAuthorized {
-            return "Speech recognition and microphone permissions are denied. Enable both in System Settings > Privacy & Security."
-        }
-        if !speechAuthorized {
-            return "Speech recognition permission is denied. Enable it in System Settings > Privacy & Security > Speech Recognition."
-        }
+    private func permissionStatusMessage(micAuthorized: Bool) -> String {
         if !micAuthorized {
             return "Microphone permission is denied. Enable it in System Settings > Privacy & Security > Microphone."
         }
@@ -678,35 +655,94 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
 #endif
     }
 
+    
     private func transcribeAudioFile(at url: URL) async throws -> String {
-        guard let speechRecognizer, speechRecognizer.isAvailable else {
+        let fileData = try Data(contentsOf: url)
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var request = URLRequest(url: whisperEndpoint)
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 90
+
+        let body = makeWhisperMultipartBody(audioData: fileData, boundary: boundary)
+        let (responseData, response) = try await URLSession.shared.upload(for: request, from: body)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
             throw NSError(
                 domain: "SpeechPractice",
                 code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Speech recognizer is not available right now."]
+                userInfo: [NSLocalizedDescriptionKey: "Whisper service returned an invalid response."]
             )
         }
 
-        let request = SFSpeechURLRecognitionRequest(url: url)
-        request.shouldReportPartialResults = false
+        guard 200...299 ~= httpResponse.statusCode else {
+            let errorMessage = String(data: responseData, encoding: .utf8) ?? "Unknown Whisper error."
+            throw NSError(
+                domain: "SpeechPractice",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Whisper transcription failed (\(httpResponse.statusCode)): \(errorMessage)"]
+            )
+        }
 
-        let result = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<SFSpeechRecognitionResult, Error>) in
-            var didResume = false
+        if let parsed = parseWhisperText(from: responseData), parsed.isEmpty == false {
+            return parsed
+        }
 
-            speechRecognizer.recognitionTask(with: request) { result, error in
-                if let error, didResume == false {
-                    didResume = true
-                    continuation.resume(throwing: error)
-                    return
-                }
+        throw NSError(
+            domain: "SpeechPractice",
+            code: 3,
+            userInfo: [NSLocalizedDescriptionKey: "Whisper response did not contain transcribed text."]
+        )
+    }
 
-                guard let result, result.isFinal, didResume == false else { return }
-                didResume = true
-                continuation.resume(returning: result)
+    private func makeWhisperMultipartBody(audioData: Data, boundary: String) -> Data {
+        var body = Data()
+        let lineBreak = "\r\n"
+        func append(_ string: String) {
+            body.append(Data(string.utf8))
+        }
+
+        append("--\(boundary)\(lineBreak)")
+        append("Content-Disposition: form-data; name=\"file\"; filename=\"speech.caf\"\(lineBreak)")
+        append("Content-Type: audio/x-caf\(lineBreak)\(lineBreak)")
+        body.append(audioData)
+        append(lineBreak)
+
+        append("--\(boundary)\(lineBreak)")
+        append("Content-Disposition: form-data; name=\"model\"\(lineBreak)\(lineBreak)")
+        append("whisper-1\(lineBreak)")
+
+        append("--\(boundary)\(lineBreak)")
+        append("Content-Disposition: form-data; name=\"language\"\(lineBreak)\(lineBreak)")
+        append("en\(lineBreak)")
+
+        append("--\(boundary)\(lineBreak)")
+        append("Content-Disposition: form-data; name=\"response_format\"\(lineBreak)\(lineBreak)")
+        append("json\(lineBreak)")
+
+        append("--\(boundary)--\(lineBreak)")
+        return body
+    }
+
+    private func parseWhisperText(from data: Data) -> String? {
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let text = json["text"] as? String {
+                return text.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            if let transcript = json["transcript"] as? String {
+                return transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            if let segments = json["segments"] as? [[String: Any]] {
+                let joined = segments.compactMap { $0["text"] as? String }.joined(separator: " ")
+                return joined.trimmingCharacters(in: .whitespacesAndNewlines)
             }
         }
 
-        return formattedTranscript(from: result)
+        if let plainText = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           plainText.isEmpty == false {
+            return plainText
+        }
+        return nil
     }
 
     private func analyzeGrammar(in text: String) -> [GrammarIssue] {
@@ -783,72 +819,6 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
             .replacingOccurrences(of: "\n", with: ". ")
             .split(whereSeparator: { ".!?".contains($0) })
             .map(String.init)
-    }
-
-    private func formattedTranscript(from result: SFSpeechRecognitionResult) -> String {
-        let rawTranscript = result.bestTranscription.formattedString
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        let segments = result.bestTranscription.segments
-        guard segments.count > 1 else {
-            return rawTranscript
-        }
-
-        let containsSentenceEndingPunctuation = rawTranscript.contains { ".!?".contains($0) }
-        if containsSentenceEndingPunctuation {
-            return rawTranscript
-        }
-
-        var sentences: [String] = []
-        var currentSentenceParts: [String] = []
-        var previousSegmentEndTime: TimeInterval?
-
-        for segment in segments {
-            let text = segment.substring.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard text.isEmpty == false else { continue }
-
-            let currentSegmentStartTime = segment.timestamp
-            let shouldStartNewSentence: Bool
-            if let previousSegmentEndTime {
-                shouldStartNewSentence = currentSegmentStartTime - previousSegmentEndTime > 1.1
-            } else {
-                shouldStartNewSentence = false
-            }
-
-            if shouldStartNewSentence, currentSentenceParts.isEmpty == false {
-                sentences.append(makeSentence(from: currentSentenceParts))
-                currentSentenceParts.removeAll()
-            }
-
-            currentSentenceParts.append(text)
-            previousSegmentEndTime = segment.timestamp + segment.duration
-        }
-
-        if currentSentenceParts.isEmpty == false {
-            sentences.append(makeSentence(from: currentSentenceParts))
-        }
-
-        let reconstructedTranscript = sentences
-            .filter { $0.isEmpty == false }
-            .joined(separator: " ")
-
-        return reconstructedTranscript.isEmpty ? rawTranscript : reconstructedTranscript
-    }
-
-    private func makeSentence(from parts: [String]) -> String {
-        let sentence = parts
-            .joined(separator: " ")
-            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard sentence.isEmpty == false else { return "" }
-
-        let capitalizedSentence = sentence.prefix(1).uppercased() + sentence.dropFirst()
-        if let lastCharacter = capitalizedSentence.last, ".!?".contains(lastCharacter) {
-            return capitalizedSentence
-        }
-
-        return capitalizedSentence + "."
     }
 
     private func handleRecordingTimerTick() {
