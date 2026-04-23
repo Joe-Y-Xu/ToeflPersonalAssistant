@@ -93,8 +93,20 @@ struct ContentView: View {
 
                             if !viewModel.latestTranscript.isEmpty {
                                 GroupBox("Latest Transcript") {
-                                    Text(viewModel.latestTranscript)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    VStack(alignment: .leading, spacing: 12) {
+                                        Button {
+                                            viewModel.toggleLatestRecordingPlayback()
+                                        } label: {
+                                            Label(
+                                                viewModel.isPlayingLatestRecording ? "Stop Playback" : "Play Recording",
+                                                systemImage: viewModel.isPlayingLatestRecording ? "stop.fill" : "play.fill"
+                                            )
+                                        }
+                                        .buttonStyle(.bordered)
+
+                                        Text(viewModel.latestTranscript)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
                                 }
                             }
 
@@ -195,6 +207,17 @@ struct ContentView: View {
                                     }
                                     Spacer()
                                     HStack(spacing: 8) {
+                                        Button {
+                                            viewModel.togglePlayback(for: record)
+                                        } label: {
+                                            Label(
+                                                viewModel.isPlaying(record: record) ? "Stop" : "Play",
+                                                systemImage: viewModel.isPlaying(record: record) ? "stop.fill" : "play.fill"
+                                            )
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .disabled(!viewModel.isPlaybackAvailable(for: record))
+
                                         Button("Review") {
                                             selectedRecord = record
                                         }
@@ -235,7 +258,7 @@ struct ContentView: View {
             }
 
             if let record = selectedRecord {
-                HistoryRecordDetailView(record: record) {
+                HistoryRecordDetailView(record: record, viewModel: viewModel) {
                     selectedRecord = nil
                 }
                 .zIndex(1)
@@ -347,6 +370,7 @@ private struct AttentionSummaryView: View {
 
 private struct HistoryRecordDetailView: View {
     let record: SpeechRecord
+    @ObservedObject var viewModel: SpeechPracticeViewModel
     let onClose: () -> Void
 
     var body: some View {
@@ -360,7 +384,20 @@ private struct HistoryRecordDetailView: View {
                 }
 
                 Section("Transcript") {
-                    Text(record.transcript)
+                    VStack(alignment: .leading, spacing: 12) {
+                        Button {
+                            viewModel.togglePlayback(for: record)
+                        } label: {
+                            Label(
+                                viewModel.isPlaying(record: record) ? "Stop Playback" : "Play Recording",
+                                systemImage: viewModel.isPlaying(record: record) ? "stop.fill" : "play.fill"
+                            )
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(!viewModel.isPlaybackAvailable(for: record))
+
+                        Text(record.transcript)
+                    }
                 }
 
                 if record.attentionModeEnabled {

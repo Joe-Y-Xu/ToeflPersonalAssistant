@@ -71,6 +71,7 @@ struct SpeechRecord: Codable, Identifiable, Hashable {
     let id: UUID
     let createdAt: Date
     let duration: TimeInterval
+    let recordingFileName: String?
     let transcript: String
     let issues: [GrammarIssue]
     let attentionModeEnabled: Bool
@@ -80,6 +81,7 @@ struct SpeechRecord: Codable, Identifiable, Hashable {
         id: UUID = UUID(),
         createdAt: Date = Date(),
         duration: TimeInterval,
+        recordingFileName: String? = nil,
         transcript: String,
         issues: [GrammarIssue],
         attentionModeEnabled: Bool = false,
@@ -88,6 +90,7 @@ struct SpeechRecord: Codable, Identifiable, Hashable {
         self.id = id
         self.createdAt = createdAt
         self.duration = duration
+        self.recordingFileName = recordingFileName
         self.transcript = transcript
         self.issues = issues
         self.attentionModeEnabled = attentionModeEnabled
@@ -98,6 +101,7 @@ struct SpeechRecord: Codable, Identifiable, Hashable {
         case id
         case createdAt
         case duration
+        case recordingFileName
         case transcript
         case issues
         case attentionModeEnabled
@@ -109,6 +113,7 @@ struct SpeechRecord: Codable, Identifiable, Hashable {
         id = try container.decode(UUID.self, forKey: .id)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         duration = try container.decode(TimeInterval.self, forKey: .duration)
+        recordingFileName = try container.decodeIfPresent(String.self, forKey: .recordingFileName)
         transcript = try container.decode(String.self, forKey: .transcript)
         issues = try container.decode([GrammarIssue].self, forKey: .issues)
         attentionModeEnabled = try container.decodeIfPresent(Bool.self, forKey: .attentionModeEnabled) ?? false
@@ -129,6 +134,8 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
     @Published var errorText: String?
     @Published var permissionsDenied = false
     @Published var isAttentionModeEnabled = false
+    @Published private(set) var currentlyPlayingRecordID: UUID?
+    @Published private(set) var isPlayingLatestRecording = false
     @Published private(set) var selectedAttentionKeys: Set<String> = []
     @Published private(set) var attentionStatistics: [AttentionStatistic] = []
     @Published private(set) var ignoredIssueKeys: Set<String> = []
@@ -153,6 +160,8 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
     private var timer: Timer?
     private var recordingStartedAt: Date?
     private var currentRecordingURL: URL?
+    private var recordingStopContinuation: CheckedContinuation<Void, Error>?
+    private var audioPlayer: AVAudioPlayer?
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
     private let jsonEncoder = JSONEncoder()
     private let jsonDecoder = JSONDecoder()
@@ -171,6 +180,7 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
 
     func startRecording() {
         errorText = nil
+        stopPlayback()
 
         Task {
             do {
@@ -184,13 +194,16 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
                 try configureAudioSessionIfNeeded()
                 let url = try makeRecordingURL()
                 let settings: [String: Any] = [
-                    AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-                    AVSampleRateKey: 12_000,
+                    AVFormatIDKey: Int(kAudioFormatLinearPCM),
+                    AVSampleRateKey: 44_100,
                     AVNumberOfChannelsKey: 1,
-                    AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
+                    AVLinearPCMBitDepthKey: 16,
+                    AVLinearPCMIsBigEndianKey: false,
+                    AVLinearPCMIsFloatKey: false
                 ]
 
                 recorder = try AVAudioRecorder(url: url, settings: settings)
+                recorder?.delegate = self
                 recorder?.isMeteringEnabled = true
                 recorder?.record()
                 recordingStartedAt = Date()
@@ -222,7 +235,7 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
         timer?.invalidate()
         timer = nil
 
-        recorder?.stop()
+        let activeRecorder = recorder
         isRecording = false
 
         let duration = elapsedTime
@@ -238,6 +251,7 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
             }
 
             do {
+                try await stopRecorderAndWaitUntilFinished(activeRecorder)
                 let transcript = try await transcribeAudioFile(at: fileURL)
                 let issues = analyzeGrammar(in: transcript)
                 let filteredIssues = issues.filter { ignoredIssueKeys.contains($0.attentionKey) == false }
@@ -262,6 +276,7 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
 
                 let record = SpeechRecord(
                     duration: duration,
+                    recordingFileName: fileURL.lastPathComponent,
                     transcript: transcript,
                     issues: filteredIssues,
                     attentionModeEnabled: isAttentionModeEnabled,
@@ -370,13 +385,54 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
     }
 
     func deleteRecord(id: UUID) {
+        if currentlyPlayingRecordID == id {
+            stopPlayback()
+        }
         history.removeAll { $0.id == id }
         persistHistory()
     }
 
     func clearHistory() {
+        stopPlayback()
         history.removeAll()
         persistHistory()
+    }
+
+    func toggleLatestRecordingPlayback() {
+        guard let currentRecordingURL else { return }
+
+        if isPlayingLatestRecording {
+            stopPlayback()
+            return
+        }
+
+        playAudio(at: currentRecordingURL, recordID: nil)
+    }
+
+    func togglePlayback(for record: SpeechRecord) {
+        guard let recordingURL = recordingURL(for: record) else { return }
+
+        if currentlyPlayingRecordID == record.id {
+            stopPlayback()
+            return
+        }
+
+        playAudio(at: recordingURL, recordID: record.id)
+    }
+
+    func isPlaybackAvailable(for record: SpeechRecord) -> Bool {
+        recordingURL(for: record) != nil
+    }
+
+    func isPlaying(record: SpeechRecord) -> Bool {
+        currentlyPlayingRecordID == record.id
+    }
+
+    func stopPlayback() {
+        audioPlayer?.stop()
+        audioPlayer = nil
+        currentlyPlayingRecordID = nil
+        isPlayingLatestRecording = false
     }
 
     func openPrivacySettings() {
@@ -473,8 +529,48 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
 
     private func makeRecordingURL() throws -> URL {
         let folder = try recordingsFolderURL()
-        let name = "recording-\(UUID().uuidString).m4a"
+        let name = "recording-\(UUID().uuidString).caf"
         return folder.appendingPathComponent(name, conformingTo: .audio)
+    }
+
+    private func recordingURL(for record: SpeechRecord) -> URL? {
+        guard let recordingFileName = record.recordingFileName else { return nil }
+        guard let folder = try? recordingsFolderURL() else { return nil }
+
+        let fileURL = folder.appendingPathComponent(recordingFileName)
+        return FileManager.default.fileExists(atPath: fileURL.path) ? fileURL : nil
+    }
+
+    private func playAudio(at url: URL, recordID: UUID?) {
+        do {
+            stopPlayback()
+            try configurePlaybackSessionIfNeeded()
+            let player = try AVAudioPlayer(contentsOf: url)
+            player.delegate = self
+            player.prepareToPlay()
+            player.play()
+            audioPlayer = player
+            currentlyPlayingRecordID = recordID
+            isPlayingLatestRecording = recordID == nil
+        } catch {
+            errorText = error.localizedDescription
+            statusText = "Unable to play this recording."
+            stopPlayback()
+        }
+    }
+
+    private func stopRecorderAndWaitUntilFinished(_ activeRecorder: AVAudioRecorder?) async throws {
+        guard let activeRecorder else { return }
+
+        if activeRecorder.isRecording == false {
+            recorder = nil
+            return
+        }
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            recordingStopContinuation = continuation
+            activeRecorder.stop()
+        }
     }
 
     private func recordingsFolderURL() throws -> URL {
@@ -574,6 +670,14 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
 #endif
     }
 
+    private func configurePlaybackSessionIfNeeded() throws {
+#if os(iOS) || os(tvOS) || os(visionOS)
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+        try session.setActive(true)
+#endif
+    }
+
     private func transcribeAudioFile(at url: URL) async throws -> String {
         guard let speechRecognizer, speechRecognizer.isAvailable else {
             throw NSError(
@@ -586,7 +690,7 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
         let request = SFSpeechURLRecognitionRequest(url: url)
         request.shouldReportPartialResults = false
 
-        return try await withCheckedThrowingContinuation { continuation in
+        let result = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<SFSpeechRecognitionResult, Error>) in
             var didResume = false
 
             speechRecognizer.recognitionTask(with: request) { result, error in
@@ -598,9 +702,11 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
 
                 guard let result, result.isFinal, didResume == false else { return }
                 didResume = true
-                continuation.resume(returning: result.bestTranscription.formattedString)
+                continuation.resume(returning: result)
             }
         }
+
+        return formattedTranscript(from: result)
     }
 
     private func analyzeGrammar(in text: String) -> [GrammarIssue] {
@@ -679,6 +785,72 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
             .map(String.init)
     }
 
+    private func formattedTranscript(from result: SFSpeechRecognitionResult) -> String {
+        let rawTranscript = result.bestTranscription.formattedString
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let segments = result.bestTranscription.segments
+        guard segments.count > 1 else {
+            return rawTranscript
+        }
+
+        let containsSentenceEndingPunctuation = rawTranscript.contains { ".!?".contains($0) }
+        if containsSentenceEndingPunctuation {
+            return rawTranscript
+        }
+
+        var sentences: [String] = []
+        var currentSentenceParts: [String] = []
+        var previousSegmentEndTime: TimeInterval?
+
+        for segment in segments {
+            let text = segment.substring.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard text.isEmpty == false else { continue }
+
+            let currentSegmentStartTime = segment.timestamp
+            let shouldStartNewSentence: Bool
+            if let previousSegmentEndTime {
+                shouldStartNewSentence = currentSegmentStartTime - previousSegmentEndTime > 1.1
+            } else {
+                shouldStartNewSentence = false
+            }
+
+            if shouldStartNewSentence, currentSentenceParts.isEmpty == false {
+                sentences.append(makeSentence(from: currentSentenceParts))
+                currentSentenceParts.removeAll()
+            }
+
+            currentSentenceParts.append(text)
+            previousSegmentEndTime = segment.timestamp + segment.duration
+        }
+
+        if currentSentenceParts.isEmpty == false {
+            sentences.append(makeSentence(from: currentSentenceParts))
+        }
+
+        let reconstructedTranscript = sentences
+            .filter { $0.isEmpty == false }
+            .joined(separator: " ")
+
+        return reconstructedTranscript.isEmpty ? rawTranscript : reconstructedTranscript
+    }
+
+    private func makeSentence(from parts: [String]) -> String {
+        let sentence = parts
+            .joined(separator: " ")
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard sentence.isEmpty == false else { return "" }
+
+        let capitalizedSentence = sentence.prefix(1).uppercased() + sentence.dropFirst()
+        if let lastCharacter = capitalizedSentence.last, ".!?".contains(lastCharacter) {
+            return capitalizedSentence
+        }
+
+        return capitalizedSentence + "."
+    }
+
     private func handleRecordingTimerTick() {
         guard let startedAt = recordingStartedAt else { return }
 
@@ -729,3 +901,60 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
         return Array(updated.values).sorted { $0.title < $1.title }
     }
 }
+
+extension SpeechPracticeViewModel: AVAudioRecorderDelegate {
+    nonisolated func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.recorder = nil
+
+            guard let continuation = self.recordingStopContinuation else { return }
+            self.recordingStopContinuation = nil
+
+            if flag {
+                continuation.resume()
+            } else {
+                continuation.resume(
+                    throwing: NSError(
+                        domain: "SpeechPractice",
+                        code: 2,
+                        userInfo: [NSLocalizedDescriptionKey: "Recording stopped before the audio file finished saving."]
+                    )
+                )
+            }
+        }
+    }
+
+    nonisolated func audioRecorderEncodeErrorDidOccur(_ recorder: AVAudioRecorder, error: Error?) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.recorder = nil
+
+            guard let continuation = self.recordingStopContinuation else { return }
+            self.recordingStopContinuation = nil
+            continuation.resume(
+                throwing: error ?? NSError(
+                    domain: "SpeechPractice",
+                    code: 3,
+                    userInfo: [NSLocalizedDescriptionKey: "The recorder failed while saving audio."]
+                )
+            )
+        }
+    }
+}
+extension SpeechPracticeViewModel: AVAudioPlayerDelegate {
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor [weak self] in
+            self?.stopPlayback()
+        }
+    }
+
+    nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.errorText = error?.localizedDescription ?? "Unable to decode this recording."
+            self.stopPlayback()
+        }
+    }
+}
+
