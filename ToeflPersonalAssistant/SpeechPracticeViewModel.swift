@@ -60,6 +60,13 @@ struct AttentionStatistic: Codable, Identifiable, Hashable {
     var id: String { issueKey }
 }
 
+struct IssuePreferenceItem: Codable, Identifiable, Hashable {
+    let issueKey: String
+    let title: String
+
+    var id: String { issueKey }
+}
+
 struct SpeechRecord: Codable, Identifiable, Hashable {
     let id: UUID
     let createdAt: Date
@@ -124,6 +131,8 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
     @Published var isAttentionModeEnabled = false
     @Published private(set) var selectedAttentionKeys: Set<String> = []
     @Published private(set) var attentionStatistics: [AttentionStatistic] = []
+    @Published private(set) var ignoredIssueKeys: Set<String> = []
+    @Published private(set) var ignoredIssueItems: [IssuePreferenceItem] = []
 
     let maxDuration: TimeInterval = 45
 
@@ -131,10 +140,15 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
         attentionStatistics.sorted { $0.title < $1.title }
     }
 
+    var selectedIgnoredIssues: [IssuePreferenceItem] {
+        ignoredIssueItems.sorted { $0.title < $1.title }
+    }
+
     private let historyStorageKey = "speechPracticeHistory"
     private let selectedAttentionStorageKey = "speechPracticeSelectedAttentionKeys"
     private let attentionStatisticsStorageKey = "speechPracticeAttentionStatistics"
     private let attentionModeStorageKey = "speechPracticeAttentionModeEnabled"
+    private let ignoredIssuesStorageKey = "speechPracticeIgnoredIssues"
     private var recorder: AVAudioRecorder?
     private var timer: Timer?
     private var recordingStartedAt: Date?
@@ -150,6 +164,8 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
         loadHistory()
         loadAttentionSelections()
         loadAttentionStatistics()
+        loadIgnoredIssues()
+        sanitizePreferences()
         isAttentionModeEnabled = UserDefaults.standard.bool(forKey: attentionModeStorageKey)
     }
 
@@ -224,15 +240,16 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
             do {
                 let transcript = try await transcribeAudioFile(at: fileURL)
                 let issues = analyzeGrammar(in: transcript)
+                let filteredIssues = issues.filter { ignoredIssueKeys.contains($0.attentionKey) == false }
                 let attentionOutcomes = isAttentionModeEnabled
                     ? Self.buildAttentionOutcomes(
                         selectedStatistics: selectedAttentionStatistics,
-                        issues: issues
+                        issues: filteredIssues
                     )
                     : []
 
                 latestTranscript = transcript
-                latestIssues = issues
+                latestIssues = filteredIssues
                 latestAttentionOutcomes = attentionOutcomes
 
                 if isAttentionModeEnabled {
@@ -246,14 +263,14 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
                 let record = SpeechRecord(
                     duration: duration,
                     transcript: transcript,
-                    issues: issues,
+                    issues: filteredIssues,
                     attentionModeEnabled: isAttentionModeEnabled,
                     attentionOutcomes: attentionOutcomes
                 )
                 history.insert(record, at: 0)
                 persistHistory()
 
-                statusText = makeStatusText(issues: issues, attentionOutcomes: attentionOutcomes)
+                statusText = makeStatusText(issues: filteredIssues, attentionOutcomes: attentionOutcomes)
             } catch {
                 errorText = error.localizedDescription
                 statusText = "Analysis failed."
@@ -267,33 +284,11 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
     }
 
     func toggleAttentionSelection(for issue: GrammarIssue) {
-        let key = issue.attentionKey
-        if selectedAttentionKeys.contains(key) {
-            selectedAttentionKeys.remove(key)
-            attentionStatistics.removeAll { $0.issueKey == key }
-        } else {
-            selectedAttentionKeys.insert(key)
-            if attentionStatistics.contains(where: { $0.issueKey == key }) == false {
-                attentionStatistics.append(
-                    AttentionStatistic(
-                        issueKey: key,
-                        title: issue.message,
-                        passCount: 0,
-                        failCount: 0
-                    )
-                )
-            }
-        }
-
-        persistAttentionSelections()
-        persistAttentionStatistics()
+        setAttentionSelection(isEnabled: !isAttentionSelected(issue), issueKey: issue.attentionKey, title: issue.message)
     }
 
     func removeAttention(issueKey: String) {
-        selectedAttentionKeys.remove(issueKey)
-        attentionStatistics.removeAll { $0.issueKey == issueKey }
-        persistAttentionSelections()
-        persistAttentionStatistics()
+        setAttentionSelection(isEnabled: false, issueKey: issueKey, title: nil)
     }
 
     func clearAllAttentions() {
@@ -305,6 +300,68 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
 
     func isAttentionSelected(_ issue: GrammarIssue) -> Bool {
         selectedAttentionKeys.contains(issue.attentionKey)
+    }
+
+    func isAttentionSelected(issueKey: String) -> Bool {
+        selectedAttentionKeys.contains(issueKey)
+    }
+
+    func setAttentionSelection(isEnabled: Bool, issueKey: String, title: String?) {
+        if isEnabled {
+            ignoredIssueKeys.remove(issueKey)
+            ignoredIssueItems.removeAll { $0.issueKey == issueKey }
+            selectedAttentionKeys.insert(issueKey)
+            if attentionStatistics.contains(where: { $0.issueKey == issueKey }) == false {
+                attentionStatistics.append(
+                    AttentionStatistic(
+                        issueKey: issueKey,
+                        title: title ?? issueKey,
+                        passCount: 0,
+                        failCount: 0
+                    )
+                )
+            }
+        } else {
+            selectedAttentionKeys.remove(issueKey)
+            attentionStatistics.removeAll { $0.issueKey == issueKey }
+        }
+
+        persistAttentionSelections()
+        persistAttentionStatistics()
+        persistIgnoredIssues()
+    }
+
+    func toggleIgnoreSelection(for issue: GrammarIssue) {
+        setIgnoreSelection(isEnabled: !isIgnored(issue), issueKey: issue.attentionKey, title: issue.message)
+    }
+
+    func setIgnoreSelection(isEnabled: Bool, issueKey: String, title: String?) {
+        if isEnabled {
+            guard selectedAttentionKeys.contains(issueKey) == false else { return }
+            ignoredIssueKeys.insert(issueKey)
+            if ignoredIssueItems.contains(where: { $0.issueKey == issueKey }) == false {
+                ignoredIssueItems.append(IssuePreferenceItem(issueKey: issueKey, title: title ?? issueKey))
+            }
+        } else {
+            ignoredIssueKeys.remove(issueKey)
+            ignoredIssueItems.removeAll { $0.issueKey == issueKey }
+        }
+
+        persistIgnoredIssues()
+    }
+
+    func isIgnored(_ issue: GrammarIssue) -> Bool {
+        ignoredIssueKeys.contains(issue.attentionKey)
+    }
+
+    func isIgnored(issueKey: String) -> Bool {
+        ignoredIssueKeys.contains(issueKey)
+    }
+
+    func clearAllIgnoredIssues() {
+        ignoredIssueKeys.removeAll()
+        ignoredIssueItems.removeAll()
+        persistIgnoredIssues()
     }
 
     func deleteHistory(at offsets: IndexSet) {
@@ -373,6 +430,29 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
         let filtered = attentionStatistics.filter { selectedAttentionKeys.contains($0.issueKey) }
         guard let data = try? jsonEncoder.encode(filtered) else { return }
         UserDefaults.standard.set(data, forKey: attentionStatisticsStorageKey)
+    }
+
+    private func loadIgnoredIssues() {
+        guard let data = UserDefaults.standard.data(forKey: ignoredIssuesStorageKey) else { return }
+        guard let decoded = try? jsonDecoder.decode([IssuePreferenceItem].self, from: data) else { return }
+        ignoredIssueItems = decoded
+        ignoredIssueKeys = Set(decoded.map(\.issueKey))
+    }
+
+    private func persistIgnoredIssues() {
+        let filtered = ignoredIssueItems.filter { ignoredIssueKeys.contains($0.issueKey) }
+        guard let data = try? jsonEncoder.encode(filtered.sorted { $0.title < $1.title }) else { return }
+        UserDefaults.standard.set(data, forKey: ignoredIssuesStorageKey)
+    }
+
+    private func sanitizePreferences() {
+        ignoredIssueKeys.subtract(selectedAttentionKeys)
+        ignoredIssueItems.removeAll { selectedAttentionKeys.contains($0.issueKey) }
+        attentionStatistics = attentionStatistics.filter { selectedAttentionKeys.contains($0.issueKey) }
+        ignoredIssueItems = ignoredIssueItems.filter { ignoredIssueKeys.contains($0.issueKey) }
+        persistAttentionSelections()
+        persistAttentionStatistics()
+        persistIgnoredIssues()
     }
 
     private func makeStatusText(issues: [GrammarIssue], attentionOutcomes: [AttentionOutcome]) -> String {

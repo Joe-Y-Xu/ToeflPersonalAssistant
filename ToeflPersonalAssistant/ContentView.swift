@@ -61,7 +61,10 @@ struct ContentView: View {
                             Button {
                                 showingAttentions = true
                             } label: {
-                                Label("Attentions (\(viewModel.selectedAttentionStatistics.count))", systemImage: "list.bullet.clipboard")
+                                Label(
+                                    "Manage (\(viewModel.selectedAttentionStatistics.count) / \(viewModel.selectedIgnoredIssues.count))",
+                                    systemImage: "list.bullet.clipboard"
+                                )
                             }
                             .buttonStyle(.bordered)
 
@@ -137,17 +140,32 @@ struct ContentView: View {
 
                                                 Spacer(minLength: 12)
 
-                                                Button {
-                                                    viewModel.toggleAttentionSelection(for: issue)
-                                                } label: {
-                                                    Label(
-                                                        viewModel.isAttentionSelected(issue) ? "Remembered" : "Attention",
-                                                        systemImage: viewModel.isAttentionSelected(issue) ? "bell.fill" : "bell"
-                                                    )
+                                                VStack(alignment: .trailing, spacing: 8) {
+                                                    Button {
+                                                        viewModel.toggleAttentionSelection(for: issue)
+                                                    } label: {
+                                                        Label(
+                                                            viewModel.isAttentionSelected(issue) ? "Attention On" : "Attention Off",
+                                                            systemImage: viewModel.isAttentionSelected(issue) ? "bell.fill" : "bell"
+                                                        )
+                                                    }
+                                                    .buttonStyle(.bordered)
+                                                    .tint(viewModel.isAttentionSelected(issue) ? .blue : nil)
+                                                    .controlSize(.small)
+
+                                                    Button {
+                                                        viewModel.toggleIgnoreSelection(for: issue)
+                                                    } label: {
+                                                        Label(
+                                                            viewModel.isIgnored(issue) ? "Ignore On" : "Ignore Off",
+                                                            systemImage: viewModel.isIgnored(issue) ? "eye.slash.fill" : "eye.slash"
+                                                        )
+                                                    }
+                                                    .buttonStyle(.bordered)
+                                                    .tint(viewModel.isIgnored(issue) ? .gray : nil)
+                                                    .controlSize(.small)
+                                                    .disabled(viewModel.isAttentionSelected(issue))
                                                 }
-                                                .buttonStyle(.bordered)
-                                                .tint(viewModel.isAttentionSelected(issue) ? .blue : nil)
-                                                .controlSize(.small)
                                             }
                                         }
                                     }
@@ -199,8 +217,8 @@ struct ContentView: View {
             .navigationTitle("Speech Coach")
             .toolbar {
                 ToolbarItemGroup {
-                    if !viewModel.selectedAttentionStatistics.isEmpty {
-                        Button("Attentions") {
+                    if !viewModel.selectedAttentionStatistics.isEmpty || !viewModel.selectedIgnoredIssues.isEmpty {
+                        Button("Manage") {
                             showingAttentions = true
                         }
                     }
@@ -257,18 +275,48 @@ private struct AttentionSummaryView: View {
                                         .foregroundStyle(.secondary)
                                 }
                                 Spacer()
-                                Button(role: .destructive) {
-                                    viewModel.removeAttention(issueKey: statistic.issueKey)
-                                } label: {
-                                    Label("Forget", systemImage: "trash")
+                                Toggle(
+                                    "Enabled",
+                                    isOn: Binding(
+                                        get: { viewModel.isAttentionSelected(issueKey: statistic.issueKey) },
+                                        set: { viewModel.setAttentionSelection(isEnabled: $0, issueKey: statistic.issueKey, title: statistic.title) }
+                                    )
+                                )
+                                .labelsHidden()
+                            }
+                        }
+                    }
+                }
+
+                Section("Ignored Issues") {
+                    if viewModel.selectedIgnoredIssues.isEmpty {
+                        Text("No ignored issues yet. Turn on Ignore for an issue to hide it from future analysis.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(viewModel.selectedIgnoredIssues) { item in
+                            HStack(alignment: .center, spacing: 12) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(item.title)
+                                    Text("Ignored in future analysis until turned off")
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
                                 }
-                                .buttonStyle(.bordered)
+                                Spacer()
+                                Toggle(
+                                    "Enabled",
+                                    isOn: Binding(
+                                        get: { viewModel.isIgnored(issueKey: item.issueKey) },
+                                        set: { viewModel.setIgnoreSelection(isEnabled: $0, issueKey: item.issueKey, title: item.title) }
+                                    )
+                                )
+                                .labelsHidden()
+                                .disabled(viewModel.isAttentionSelected(issueKey: item.issueKey))
                             }
                         }
                     }
                 }
             }
-            .navigationTitle("Attentions")
+            .navigationTitle("Manage Issues")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") {
@@ -278,8 +326,16 @@ private struct AttentionSummaryView: View {
 
                 if !viewModel.selectedAttentionStatistics.isEmpty {
                     ToolbarItem(placement: .destructiveAction) {
-                        Button("Clear All") {
+                        Button("Clear Attentions") {
                             viewModel.clearAllAttentions()
+                        }
+                    }
+                }
+
+                if !viewModel.selectedIgnoredIssues.isEmpty {
+                    ToolbarItem {
+                        Button("Clear Ignores") {
+                            viewModel.clearAllIgnoredIssues()
                         }
                     }
                 }

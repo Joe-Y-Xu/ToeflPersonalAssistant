@@ -5,6 +5,11 @@ DerivedData/
 *.build
 *.xcarchive
 
+# 🔥 强制忽略所有 xcuserdata 和 xcdebugger
+**/*.xcuserdatad/
+**/xcdebugger/
+**/*.xcuserdata/
+
 # 忽略缓存
 .DS_Store
 *.log
