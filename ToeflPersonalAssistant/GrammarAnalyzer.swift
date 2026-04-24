@@ -7,6 +7,18 @@
 
 import Foundation
 
+// MARK: - STRUCTURED LLM RESPONSE (OPTIMIZED)
+struct TOEFLFeedback: Codable {
+    let revisedSentence: String
+    let grammarErrors: [GrammarError]
+}
+
+struct GrammarError: Codable, Identifiable {
+    let id: UUID
+    let message: String
+    let type: String
+}
+
 final class GrammarAnalyzer {
     static let shared = GrammarAnalyzer()
     private init() {}
@@ -19,6 +31,7 @@ final class GrammarAnalyzer {
             ]
         }
 
+        // ✅ YOUR ORIGINAL PROMPT — NOTHING CHANGED HERE
         let prompt = """
         You are an official 2026 TOEFL iBT Speaking examiner (max score 6.0).
         
@@ -62,20 +75,31 @@ final class GrammarAnalyzer {
             let res = try JSONDecoder().decode(AIResponse.self, from: data)
             let feedback = res.choices.first?.message.content ?? "No feedback"
 
-            // 👇 Split into separate issues
-            let revisedPart = feedback.components(separatedBy: "TOEFL 6.0 Revised Version:").last?.components(separatedBy: "Grammar Errors:").first ?? ""
-            let errorsPart = feedback.components(separatedBy: "Grammar Errors:").last ?? ""
+            // 👇 FIXED PARSING — STABLE & CLEAN
+            let components = feedback.components(separatedBy: "Grammar Errors:")
+            let revisedText = components.first?.components(separatedBy: "TOEFL 6.0 Revised Version:").last?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let errorsText = components.count > 1 ? components[1] : ""
 
-            let errorLines = errorsPart.components(separatedBy: .newlines)
+            let errorLines = errorsText.components(separatedBy: .newlines)
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { $0.starts(with: "*") }
+                .filter { !$0.isEmpty && $0.starts(with: "*") }
 
             var issues: [GrammarIssue] = []
-            // Add the revised version as the first issue (no buttons in UI)
-            issues.append(GrammarIssue(id: UUID(), message: "TOEFL 6.0 Revised Version:\n\(revisedPart)", snippet: ""))
-            // Add each error as its own issue
+            
+            // 1. Revised Version (no buttons)
+            issues.append(GrammarIssue(
+                id: UUID(),
+                message: "TOEFL 6.0 Revised Version:\n\(revisedText)",
+                snippet: ""
+            ))
+            
+            // 2. Each grammar error (WILL show buttons)
             for line in errorLines {
-                issues.append(GrammarIssue(id: UUID(), message: line, snippet: ""))
+                issues.append(GrammarIssue(
+                    id: UUID(),
+                    message: line,
+                    snippet: ""
+                ))
             }
 
             return issues
