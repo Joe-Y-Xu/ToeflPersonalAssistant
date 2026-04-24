@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 struct ContentView: View {
     @StateObject private var viewModel = SpeechPracticeViewModel()
@@ -91,10 +92,11 @@ struct ContentView: View {
                                 .buttonStyle(.bordered)
                             }
 
+
                             if !viewModel.latestTranscript.isEmpty {
                                 GroupBox("Latest Transcript") {
                                     VStack(alignment: .leading, spacing: 12) {
-                                        // Play/Stop Recording Button (unchanged)
+                                        // Play Button
                                         Button {
                                             viewModel.toggleLatestRecordingPlayback()
                                         } label: {
@@ -105,34 +107,10 @@ struct ContentView: View {
                                         }
                                         .buttonStyle(.bordered)
                                         
-                                        // Copy Transcript Button (ERROR FIXED)
-                                        Button {
-                                            NSPasteboard.general.clearContents()
-                                            NSPasteboard.general.setString(viewModel.latestTranscript, forType: .string)
-                                            viewModel.statusText = "Transcript copied to clipboard!"
-                                        } label: {
-                                            Label("Copy Transcript", systemImage: "doc.on.doc")
-                                        }
-                                        .buttonStyle(.bordered)
-                                        .foregroundColor(.accentColor) // Fixed line (works on all macOS versions)
+                                        // ✅ REPLACED WITH GRAMMAR CHECK VIEW ✅
+                                        GrammarHighlightView(text: viewModel.latestTranscript)
+                                            .frame(height: 140)
                                         
-                                        // Copiable Transcript Text (unchanged, no errors)
-                                        Text(viewModel.latestTranscript)
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                            .contextMenu {
-                                                Button(action: {
-                                                    NSPasteboard.general.clearContents()
-                                                    NSPasteboard.general.setString(viewModel.latestTranscript, forType: .string)
-                                                    viewModel.statusText = "Transcript copied to clipboard!"
-                                                }) {
-                                                    Label("Copy", systemImage: "doc.on.doc")
-                                                }
-                                            }
-                                            .onTapGesture(count: 2) {
-                                                NSPasteboard.general.clearContents()
-                                                NSPasteboard.general.setString(viewModel.latestTranscript, forType: .string)
-                                                viewModel.statusText = "Transcript copied to clipboard!"
-                                            }
                                     }
                                 }
                             }
@@ -165,21 +143,21 @@ struct ContentView: View {
 
                             if !viewModel.latestIssues.isEmpty {
                                 GroupBox("Detected Grammar Issues") {
-                                    VStack(alignment: .leading, spacing: 10) {
+                                    VStack(alignment: .leading, spacing: 12) {
+                                        // 👇 This loop runs once for every issue
                                         ForEach(viewModel.latestIssues) { issue in
-                                            HStack(alignment: .top, spacing: 12) {
-                                                VStack(alignment: .leading, spacing: 2) {
-                                                    Text(issue.message)
-                                                    if !issue.snippet.isEmpty {
-                                                        Text("\"\(issue.snippet)\"")
-                                                            .foregroundStyle(.secondary)
-                                                    }
-                                                }
-                                                .font(.footnote)
+                                            // Each issue gets its own VStack (Text + Buttons)
+                                            VStack(alignment: .leading, spacing: 8) {
+                                                // 1. The issue text (takes full width)
+                                                Text(issue.message)
+                                                    .lineLimit(nil)
+                                                    .fixedSize(horizontal: false, vertical: true)
+                                                    .frame(maxWidth: .infinity, alignment: .leading) // Forces text to full width
 
-                                                Spacer(minLength: 12)
+                                                // 2. Buttons FOR THIS ISSUE (inside the loop)
+                                                HStack(spacing: 8) {
+                                                    Spacer() // Pushes buttons to the right
 
-                                                VStack(alignment: .trailing, spacing: 8) {
                                                     Button {
                                                         viewModel.toggleAttentionSelection(for: issue)
                                                     } label: {
@@ -206,10 +184,11 @@ struct ContentView: View {
                                                     .disabled(viewModel.isAttentionSelected(issue))
                                                 }
                                             }
-                                        }
+                                        } // ← End of ForEach loop
                                     }
                                 }
                             }
+                            
                         }
                         .padding(.vertical, 4)
                     }
@@ -478,6 +457,63 @@ private struct HistoryRecordDetailView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(.background)
+    }
+}
+
+// NATIVE MAC TEXT VIEW — RIGHT-CLICK COPY PERFECT
+struct NativeMacTextView: NSViewRepresentable {
+    let text: String
+    
+    func makeNSView(context: Context) -> NSTextView {
+        let textView = NSTextView()
+        textView.string = text
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.drawsBackground = false
+        textView.font = .systemFont(ofSize: 13)
+        return textView
+    }
+    
+    func updateNSView(_ nsView: NSTextView, context: Context) {
+        nsView.string = text
+    }
+}
+
+
+// Native Mac Text View with REAL-TIME GRAMMAR & SPELLING CHECK
+
+
+// ✅ PERFECT, NO ERRORS, MAC NATIVE TEXT VIEW
+struct NativeTextView: NSViewRepresentable {
+    let text: String
+    
+    func makeNSView(context: Context) -> NSTextView {
+        let textView = NSTextView()
+        textView.string = text
+        textView.isEditable = false
+        textView.isSelectable = true
+        
+        // ✅ Enable spelling & grammar (CORRECT MAC CODE)
+        textView.isContinuousSpellCheckingEnabled = true
+        textView.isGrammarCheckingEnabled = true
+        
+        // Style
+        textView.drawsBackground = true
+        textView.backgroundColor = NSColor(
+            red: 0.9, green: 0.9, blue: 0.9, alpha: 0.1
+        )
+        textView.font = .systemFont(ofSize: 14)
+        textView.textContainerInset = NSSize(width: 8, height: 8)
+        textView.wantsLayer = true
+        textView.layer?.cornerRadius = 6
+        
+        return textView
+    }
+    
+    func updateNSView(_ nsView: NSTextView, context: Context) {
+        if nsView.string != text {
+            nsView.string = text
+        }
     }
 }
 

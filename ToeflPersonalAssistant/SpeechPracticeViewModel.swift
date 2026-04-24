@@ -14,6 +14,7 @@ import UIKit
 #endif
 #if os(macOS)
 import AppKit
+import NaturalLanguage
 #endif
 
 struct GrammarIssue: Codable, Identifiable, Hashable {
@@ -245,15 +246,25 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
             defer { isAnalyzing = false }
 
             guard let fileURL = currentRecordingURL else {
-                statusText = "No recording found."
+                await MainActor.run {
+                    statusText = "No recording found."
+                }
                 return
             }
 
             do {
                 try await stopRecorderAndWaitUntilFinished(activeRecorder)
                 let transcript = try await transcribeAudioFile(at: fileURL)
-                let issues = analyzeGrammar(in: transcript)
-                let filteredIssues = issues.filter { ignoredIssueKeys.contains($0.attentionKey) == false }
+                
+                // ✅ 1. Run AI TOEFL Grammar Check (async + await)
+                let issues = await analyzeGrammar(in: transcript)
+                
+                // ✅ 2. Filter ignored issues
+                let filteredIssues = issues.filter {
+                    !ignoredIssueKeys.contains($0.attentionKey)
+                }
+                
+                // ✅ 3. Attention mode logic
                 let attentionOutcomes = isAttentionModeEnabled
                     ? Self.buildAttentionOutcomes(
                         selectedStatistics: selectedAttentionStatistics,
@@ -261,18 +272,25 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
                     )
                     : []
 
-                latestTranscript = transcript
-                latestIssues = filteredIssues
-                latestAttentionOutcomes = attentionOutcomes
-
-                if isAttentionModeEnabled {
-                    attentionStatistics = Self.merging(
-                        attentionOutcomes: attentionOutcomes,
-                        into: attentionStatistics
-                    )
-                    persistAttentionStatistics()
+                // ✅ 4. Update UI on Main Thread
+                await MainActor.run {
+                    self.latestTranscript = transcript
+                    self.latestIssues = filteredIssues
+                    self.latestAttentionOutcomes = attentionOutcomes
                 }
 
+                // ✅ 5. Update attention stats
+                if isAttentionModeEnabled {
+                    await MainActor.run {
+                        self.attentionStatistics = Self.merging(
+                            attentionOutcomes: attentionOutcomes,
+                            into: self.attentionStatistics
+                        )
+                        self.persistAttentionStatistics()
+                    }
+                }
+
+                // ✅ 6. Save record
                 let record = SpeechRecord(
                     duration: duration,
                     recordingFileName: fileURL.lastPathComponent,
@@ -281,13 +299,18 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
                     attentionModeEnabled: isAttentionModeEnabled,
                     attentionOutcomes: attentionOutcomes
                 )
-                history.insert(record, at: 0)
-                persistHistory()
+                
+                await MainActor.run {
+                    self.history.insert(record, at: 0)
+                    self.persistHistory()
+                    self.statusText = self.makeStatusText(issues: filteredIssues, attentionOutcomes: attentionOutcomes)
+                }
 
-                statusText = makeStatusText(issues: filteredIssues, attentionOutcomes: attentionOutcomes)
             } catch {
-                errorText = error.localizedDescription
-                statusText = "Analysis failed."
+                await MainActor.run {
+                    self.errorText = error.localizedDescription
+                    self.statusText = "Analysis failed."
+                }
             }
         }
     }
@@ -513,7 +536,7 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
     private func makeStatusText(issues: [GrammarIssue], attentionOutcomes: [AttentionOutcome]) -> String {
         if isAttentionModeEnabled {
             guard selectedAttentionKeys.isEmpty == false else {
-                return "Attention Mode A is on, but no attentions are selected yet."
+                return "Attention Model is on, but no attentions are selected yet."
             }
 
             let failedCount = attentionOutcomes.filter { $0.status == .failed }.count
@@ -808,75 +831,61 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
         }
     }
 
-    private func analyzeGrammar(in text: String) -> [GrammarIssue] {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            return [GrammarIssue(message: "No speech was detected.", snippet: "")]
-        }
 
-        var issues: [GrammarIssue] = []
-        let sentences = splitIntoSentences(trimmed)
-
-        for sentence in sentences {
-            let normalized = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
-            if normalized.isEmpty { continue }
-
-            if let first = normalized.first, first.isLetter, first.isLowercase {
-                issues.append(
-                    GrammarIssue(
-                        message: "Sentence should start with a capital letter.",
-                        snippet: normalized
-                    )
-                )
-            }
-
-            if let last = normalized.last, ![".", "!", "?"].contains(last) {
-                issues.append(
-                    GrammarIssue(
-                        message: "Sentence may be missing ending punctuation.",
-                        snippet: normalized
-                    )
-                )
-            }
-
-            let words = normalized.split(separator: " ").map(String.init)
-            if words.count < 3 {
-                issues.append(
-                    GrammarIssue(
-                        message: "Sentence may be too short or a fragment.",
-                        snippet: normalized
-                    )
-                )
-            }
-        }
-
-        let lowerText = trimmed.lowercased()
-        let agreementPairs: [(String, String)] = [
-            ("i is", "Use \"I am\" instead of \"I is\"."),
-            ("he are", "Use \"he is\" instead of \"he are\"."),
-            ("she are", "Use \"she is\" instead of \"she are\"."),
-            ("they is", "Use \"they are\" instead of \"they is\"."),
-            ("we was", "Use \"we were\" instead of \"we was\"."),
-            ("i were", "Use \"I was\" instead of \"I were\".")
-        ]
-        for (pattern, message) in agreementPairs where lowerText.contains(pattern) {
-            issues.append(GrammarIssue(message: message, snippet: pattern))
-        }
-
-        let repeatedWordPattern = #"\b([A-Za-z]+)\s+\1\b"#
-        if let regex = try? NSRegularExpression(pattern: repeatedWordPattern, options: [.caseInsensitive]) {
-            let nsRange = NSRange(trimmed.startIndex..., in: trimmed)
-            regex.matches(in: trimmed, options: [], range: nsRange).forEach { match in
-                if let range = Range(match.range, in: trimmed) {
-                    let snippet = String(trimmed[range])
-                    issues.append(GrammarIssue(message: "Repeated word detected.", snippet: snippet))
-                }
-            }
-        }
-
-        return Array(Set(issues)).sorted { $0.message < $1.message }
+    // ✅ APPLE AI GRAMMAR ANALYSIS (TOEFL-LEVEL ACCURACY)
+//    private func analyzeGrammar(in text: String) -> [GrammarIssue] {
+//        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+//        guard !trimmed.isEmpty else {
+//            return [GrammarIssue(id: UUID(), message: "No speech detected.", snippet: "")]
+//        }
+//        
+//        var issues = [GrammarIssue]()
+//        
+//        // ✅ APPLE OFFICIAL BUILT-IN GRAMMAR ENGINE (ONLY THIS)
+//        let checker = NSSpellChecker.shared
+//        let fullRange = NSRange(text.startIndex..., in: text)
+//        
+//        // Real grammar detection (no primitive code)
+//        let results = checker.check(
+//            trimmed,
+//            range: fullRange,
+//            types: NSTextCheckingResult.CheckingType.grammar.rawValue,
+//            options: [:],
+//            inSpellDocumentWithTag: 0,
+//            orthography: nil,
+//            wordCount: nil
+//        )
+//        
+//        // Convert Apple's results to your GrammarIssue
+//        for result in results {
+//            guard let range = Range(result.range, in: trimmed) else { continue }
+//            let snippet = String(trimmed[range])
+//            
+//            issues.append(GrammarIssue(
+//                id: UUID(),
+//                message: "Grammar Issue (TOEFL Relevant)",
+//                snippet: snippet
+//            ))
+//        }
+//        
+//        // Final result
+//        if issues.isEmpty {
+//            return [GrammarIssue(
+//                id: UUID(),
+//                message: "No grammar issues detected. Good TOEFL structure!",
+//                snippet: ""
+//            )]
+//        }
+//        
+//        return Array(Set(issues))
+//    }
+//    
+// Large language model
+    // ✅ REPLACES OLD FUNCTION — CLEAN & SIMPLE
+    private func analyzeGrammar(in text: String) async -> [GrammarIssue] {
+        await GrammarAnalyzer.shared.analyzeTOEFLGrammar(text: text)
     }
-
+    
     private func splitIntoSentences(_ text: String) -> [String] {
         text
             .replacingOccurrences(of: "\n", with: ". ")
