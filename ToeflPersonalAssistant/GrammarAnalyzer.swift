@@ -31,7 +31,9 @@ final class GrammarAnalyzer {
             ]
         }
 
+
         // ✅ YOUR ORIGINAL PROMPT — NOTHING CHANGED HERE
+
         let prompt = """
         You are an official 2026 TOEFL iBT Speaking examiner (max score 6.0).
         
@@ -80,10 +82,22 @@ final class GrammarAnalyzer {
             let revisedText = components.first?.components(separatedBy: "TOEFL 6.0 Revised Version:").last?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let errorsText = components.count > 1 ? components[1] : ""
 
+
             let errorLines = errorsText.components(separatedBy: .newlines)
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty && $0.starts(with: "*") }
 
+            // ✅ NOW WE USE THE STRUCTURED OBJECT!
+            let errors = errorLines.map {
+                GrammarError(id: UUID(), message: $0, type: "grammar")
+            }
+            
+            let structuredFeedback = TOEFLFeedback(
+                revisedSentence: revisedText,
+                grammarErrors: errors
+            )
+
+            // Convert to UI model
             var issues: [GrammarIssue] = []
             
             // 1. Revised Version (no buttons)
@@ -98,6 +112,7 @@ final class GrammarAnalyzer {
                 issues.append(GrammarIssue(
                     id: UUID(),
                     message: line,
+
                     snippet: ""
                 ))
             }
