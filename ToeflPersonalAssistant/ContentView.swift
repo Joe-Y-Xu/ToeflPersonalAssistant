@@ -94,6 +94,7 @@ struct ContentView: View {
                             if !viewModel.latestTranscript.isEmpty {
                                 GroupBox("Latest Transcript") {
                                     VStack(alignment: .leading, spacing: 12) {
+                                        // Play/Stop Recording Button (unchanged)
                                         Button {
                                             viewModel.toggleLatestRecordingPlayback()
                                         } label: {
@@ -103,13 +104,39 @@ struct ContentView: View {
                                             )
                                         }
                                         .buttonStyle(.bordered)
-
+                                        
+                                        // Copy Transcript Button (ERROR FIXED)
+                                        Button {
+                                            NSPasteboard.general.clearContents()
+                                            NSPasteboard.general.setString(viewModel.latestTranscript, forType: .string)
+                                            viewModel.statusText = "Transcript copied to clipboard!"
+                                        } label: {
+                                            Label("Copy Transcript", systemImage: "doc.on.doc")
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .foregroundColor(.accentColor) // Fixed line (works on all macOS versions)
+                                        
+                                        // Copiable Transcript Text (unchanged, no errors)
                                         Text(viewModel.latestTranscript)
                                             .frame(maxWidth: .infinity, alignment: .leading)
+                                            .contextMenu {
+                                                Button(action: {
+                                                    NSPasteboard.general.clearContents()
+                                                    NSPasteboard.general.setString(viewModel.latestTranscript, forType: .string)
+                                                    viewModel.statusText = "Transcript copied to clipboard!"
+                                                }) {
+                                                    Label("Copy", systemImage: "doc.on.doc")
+                                                }
+                                            }
+                                            .onTapGesture(count: 2) {
+                                                NSPasteboard.general.clearContents()
+                                                NSPasteboard.general.setString(viewModel.latestTranscript, forType: .string)
+                                                viewModel.statusText = "Transcript copied to clipboard!"
+                                            }
                                     }
                                 }
                             }
-
+                            
                             if viewModel.isAttentionModeEnabled, !viewModel.latestAttentionOutcomes.isEmpty {
                                 GroupBox("Attention Review") {
                                     VStack(alignment: .leading, spacing: 10) {
