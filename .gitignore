@@ -13,3 +13,27 @@ DerivedData/
 # 忽略缓存
 .DS_Store
 *.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.env
+.venv
+
+# 模型 & 缓存
+models/
+whisper_models/
+*.bin
+*.pt
+*.pth
+*.onnx
+
+# 系统
+.DS_Store
+#ignore tools 
+tools/**

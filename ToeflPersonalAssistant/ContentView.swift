@@ -49,7 +49,7 @@ struct ContentView: View {
                                     viewModel.setAttentionModeEnabled(!viewModel.isAttentionModeEnabled)
                                 } label: {
                                     Label(
-                                        viewModel.isAttentionModeEnabled ? "Attention A On" : "Attention A Off",
+                                        viewModel.isAttentionModeEnabled ? "Attention On" : "Attention Off",
                                         systemImage: viewModel.isAttentionModeEnabled ? "scope" : "scope"
                                     )
                                 }
