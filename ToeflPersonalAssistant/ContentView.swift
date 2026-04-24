@@ -144,47 +144,41 @@ struct ContentView: View {
                             if !viewModel.latestIssues.isEmpty {
                                 GroupBox("Detected Grammar Issues") {
                                     VStack(alignment: .leading, spacing: 12) {
-                                        // 👇 This loop runs once for every issue
                                         ForEach(viewModel.latestIssues) { issue in
-                                            // Each issue gets its own VStack (Text + Buttons)
                                             VStack(alignment: .leading, spacing: 8) {
-                                                // 1. The issue text (takes full width)
                                                 Text(issue.message)
                                                     .lineLimit(nil)
                                                     .fixedSize(horizontal: false, vertical: true)
-                                                    .frame(maxWidth: .infinity, alignment: .leading) // Forces text to full width
+                                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                                
+                                                // Only show buttons if it's a grammar error (starts with "*" and not the revised version)
+                                                if issue.message.starts(with: "*") && !issue.message.contains("TOEFL 6.0 Revised Version") {
+                                                    HStack(spacing: 8) {
+                                                        Spacer()
+                                                        Button {
+                                                            viewModel.toggleAttentionSelection(for: issue)
+                                                        } label: {
+                                                            Label(viewModel.isAttentionSelected(issue) ? "Attention On" : "Attention Off",
+                                                                  systemImage: viewModel.isAttentionSelected(issue) ? "bell.fill" : "bell")
+                                                        }
+                                                        .buttonStyle(.bordered)
+                                                        .tint(viewModel.isAttentionSelected(issue) ? .blue : nil)
+                                                        .controlSize(.small)
 
-                                                // 2. Buttons FOR THIS ISSUE (inside the loop)
-                                                HStack(spacing: 8) {
-                                                    Spacer() // Pushes buttons to the right
-
-                                                    Button {
-                                                        viewModel.toggleAttentionSelection(for: issue)
-                                                    } label: {
-                                                        Label(
-                                                            viewModel.isAttentionSelected(issue) ? "Attention On" : "Attention Off",
-                                                            systemImage: viewModel.isAttentionSelected(issue) ? "bell.fill" : "bell"
-                                                        )
+                                                        Button {
+                                                            viewModel.toggleIgnoreSelection(for: issue)
+                                                        } label: {
+                                                            Label(viewModel.isIgnored(issue) ? "Ignore On" : "Ignore Off",
+                                                                  systemImage: viewModel.isIgnored(issue) ? "eye.slash.fill" : "eye.slash")
+                                                        }
+                                                        .buttonStyle(.bordered)
+                                                        .tint(viewModel.isIgnored(issue) ? .gray : nil)
+                                                        .controlSize(.small)
+                                                        .disabled(viewModel.isAttentionSelected(issue))
                                                     }
-                                                    .buttonStyle(.bordered)
-                                                    .tint(viewModel.isAttentionSelected(issue) ? .blue : nil)
-                                                    .controlSize(.small)
-
-                                                    Button {
-                                                        viewModel.toggleIgnoreSelection(for: issue)
-                                                    } label: {
-                                                        Label(
-                                                            viewModel.isIgnored(issue) ? "Ignore On" : "Ignore Off",
-                                                            systemImage: viewModel.isIgnored(issue) ? "eye.slash.fill" : "eye.slash"
-                                                        )
-                                                    }
-                                                    .buttonStyle(.bordered)
-                                                    .tint(viewModel.isIgnored(issue) ? .gray : nil)
-                                                    .controlSize(.small)
-                                                    .disabled(viewModel.isAttentionSelected(issue))
                                                 }
                                             }
-                                        } // ← End of ForEach loop
+                                        }
                                     }
                                 }
                             }
