@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		53A0138E2F9D47D700FF6A5B /* Alamofire in Frameworks */ = {isa = PBXBuildFile; productRef = 53A0138D2F9D47D700FF6A5B /* Alamofire */; };
+		53A013912F9D493900FF6A5B /* OpenAI in Frameworks */ = {isa = PBXBuildFile; productRef = 53A013902F9D493900FF6A5B /* OpenAI */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		53A973482F97A9200017454D /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +57,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				53A013912F9D493900FF6A5B /* OpenAI in Frameworks */,
+				53A0138E2F9D47D700FF6A5B /* Alamofire in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +119,8 @@
 			);
 			name = ToeflPersonalAssistant;
 			packageProductDependencies = (
+				53A0138D2F9D47D700FF6A5B /* Alamofire */,
+				53A013902F9D493900FF6A5B /* OpenAI */,
 			);
 			productName = ToeflPersonalAssistant;
 			productReference = 53A973352F97A91F0017454D /* ToeflPersonalAssistant.app */;
@@ -195,6 +204,10 @@
 			);
 			mainGroup = 53A9732C2F97A91F0017454D;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				53A0138C2F9D47D700FF6A5B /* XCRemoteSwiftPackageReference "Alamofire" */,
+				53A0138F2F9D493900FF6A5B /* XCRemoteSwiftPackageReference "OpenAI" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 53A973362F97A91F0017454D /* Products */;
 			projectDirPath = "";
@@ -649,6 +662,38 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		53A0138C2F9D47D700FF6A5B /* XCRemoteSwiftPackageReference "Alamofire" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/Alamofire/Alamofire.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 5.11.2;
+			};
+		};
+		53A0138F2F9D493900FF6A5B /* XCRemoteSwiftPackageReference "OpenAI" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/MacPaw/OpenAI.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.4.8;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		53A0138D2F9D47D700FF6A5B /* Alamofire */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 53A0138C2F9D47D700FF6A5B /* XCRemoteSwiftPackageReference "Alamofire" */;
+			productName = Alamofire;
+		};
+		53A013902F9D493900FF6A5B /* OpenAI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 53A0138F2F9D493900FF6A5B /* XCRemoteSwiftPackageReference "OpenAI" */;
+			productName = OpenAI;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 53A9732D2F97A91F0017454D /* Project object */;
 }

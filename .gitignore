@@ -5,6 +5,11 @@ DerivedData/
 *.build
 *.xcarchive
 
+# Swift Package Manager 缓存与产物
+.build/
+Package.resolved
+*.xcworkspace/xcuserdata/
+
 # 🔥 强制忽略所有 xcuserdata 和 xcdebugger
 **/*.xcuserdatad/
 **/xcdebugger/

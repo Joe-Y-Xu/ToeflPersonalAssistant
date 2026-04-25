@@ -152,6 +152,12 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
     var selectedIgnoredIssues: [IssuePreferenceItem] {
         ignoredIssueItems.sorted { $0.title < $1.title }
     }
+    
+    func removeIgnoredIssue(issueKey: String) {
+        ignoredIssueKeys.remove(issueKey)
+        ignoredIssueItems.removeAll { $0.issueKey == issueKey }
+        persistIgnoredIssues()
+    }
 
     private let historyStorageKey = "speechPracticeHistory"
     private let selectedAttentionStorageKey = "speechPracticeSelectedAttentionKeys"
@@ -180,6 +186,10 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
         isAttentionModeEnabled = UserDefaults.standard.bool(forKey: attentionModeStorageKey)
     }
     
+    // ADD Removing ignoredIssues
+    func deleteFromIgnored(issueKey: String) {
+        ignoredIssueKeys.remove(issueKey)
+    }
     // ✅ FOR YOUR VARIABLES: selectedAttentionKeys + ignoredIssueItems
     func generateTranscriptionPrompt() -> String {
         // Base clear prompt for Whisper
@@ -1027,6 +1037,8 @@ extension SpeechPracticeViewModel: AVAudioRecorderDelegate {
         }
     }
 }
+
+
 extension SpeechPracticeViewModel: AVAudioPlayerDelegate {
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         Task { @MainActor [weak self] in
@@ -1042,4 +1054,5 @@ extension SpeechPracticeViewModel: AVAudioPlayerDelegate {
         }
     }
 }
+
 

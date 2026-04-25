@@ -48,15 +48,15 @@ struct ContentView: View {
 
                                 // ✅ ORIGINAL Attention Mode + NEW Accuracy Button (in same HStack)
                                 HStack(spacing: 8) {
-                                    Button {
-                                        viewModel.setAttentionModeEnabled(!viewModel.isAttentionModeEnabled)
-                                    } label: {
-                                        Label(
-                                            viewModel.isAttentionModeEnabled ? "Attention Mode ON" : "Attention Mode OFF",
-                                            systemImage: viewModel.isAttentionModeEnabled ? "checkmark.circle.fill" : "circle"
-                                        )
-                                    }
-                                    .buttonStyle(.bordered)
+//                                    Button {
+//                                        viewModel.setAttentionModeEnabled(!viewModel.isAttentionModeEnabled)
+//                                    } label: {
+//                                        Label(
+//                                            viewModel.isAttentionModeEnabled ? "Attention Mode ON" : "Attention Mode OFF",
+//                                            systemImage: viewModel.isAttentionModeEnabled ? "checkmark.circle.fill" : "circle"
+//                                        )
+//                                    }
+//                                    .buttonStyle(.bordered)
 
                                     // ✅ NEW: 3-State Accuracy Menu (Fast / Balanced / Accurate)
                                     Menu {
@@ -320,15 +320,15 @@ private struct AttentionSummaryView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Attention Mode") {
-                    Toggle(
-                        "Track only selected attentions after each recording",
-                        isOn: Binding(
-                            get: { viewModel.isAttentionModeEnabled },
-                            set: { viewModel.setAttentionModeEnabled($0) }
-                        )
-                    )
-                }
+//                Section("Attention Mode") {
+//                    Toggle(
+//                        "Track only selected attentions after each recording",
+//                        isOn: Binding(
+//                            get: { viewModel.isAttentionModeEnabled },
+//                            set: { viewModel.setAttentionModeEnabled($0) }
+//                        )
+//                    )
+//                }
 
                 Section("Selected Attentions") {
                     if viewModel.selectedAttentionStatistics.isEmpty {
@@ -404,26 +404,23 @@ private struct AttentionSummaryView: View {
                     }
                 }
 
-                // ✅ 只删除选中的项目
-                if !viewModel.selectedAttentionStatistics.isEmpty {
-                    ToolbarItem(placement: .destructiveAction) {
-                        Button("Clear Selected") {
-                            for key in selectedItems {
-                                viewModel.removeAttention(issueKey: key)
-                            }
-                            selectedItems.removeAll()
+                // MARK: - 工具栏按钮
+                // 1. 删除选中的关注项（正常工作）
+                ToolbarItem(placement: .destructiveAction) {
+                    Button("Clear Selected") {
+                        for key in selectedItems {
+                            // DELETE FROM WATCHED LIST
+                            viewModel.removeAttention(issueKey: key)
+                            
+                            // DELETE FROM IGNORED LIST (THIS IS THE MISSING PIECE)
+                            viewModel.removeIgnoredIssue(issueKey: key)
                         }
-                        .disabled(selectedItems.isEmpty)
+                        selectedItems.removeAll()
                     }
+                    .disabled(selectedItems.isEmpty)
                 }
-//
-//                if !viewModel.selectedIgnoredIssues.isEmpty {
-//                    ToolbarItem {
-//                        Button("Clear Ignores") {
-//                            viewModel.clearAllIgnoredIssues()
-//                        }
-//                    }
-//                }
+
+                //
             }
         }
         .frame(minWidth: 480, minHeight: 320)
@@ -442,7 +439,7 @@ private struct HistoryRecordDetailView: View {
                     Text("Created: \(record.createdAt.formatted(date: .abbreviated, time: .shortened))")
                     Text("Duration: \(record.duration, specifier: "%.1f") seconds")
                     Text("Grammar issues: \(record.issues.count)")
-                    Text("Attention Mode A: \(record.attentionModeEnabled ? "On" : "Off")")
+ //                   Text("Attention Mode: \(record.attentionModeEnabled ? "On" : "Off")")
                 }
 
                 Section("Transcript") {

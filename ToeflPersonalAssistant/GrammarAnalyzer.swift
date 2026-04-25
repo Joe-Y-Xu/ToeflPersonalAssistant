@@ -41,13 +41,15 @@ final class GrammarAnalyzer {
         
         // ==============================================
         // ✅ YOUR WATCH / IGNORE WORDS (BUILT INTO PROMPT)
-        // ==============================================
+        // ✅ ONLY SELECTED ATTENTIONS (already correct)
         let focusWords = attentionStatistics
             .filter { selectedAttentionKeys.contains($0.id) }
             .map { $0.title }
             .joined(separator: ", ")
 
+        // ✅ ONLY SELECTED IGNORED ITEMS (SAFE VERSION — NO ERROR)
         let avoidWords = ignoredIssueItems
+            .filter { selectedAttentionKeys.contains($0.id) == false }
             .map { $0.title }
             .joined(separator: ", ")
 
@@ -66,17 +68,32 @@ final class GrammarAnalyzer {
         // ==============================================
         // ✅ DYNAMIC PROMPT & AI TEMPERATURE (NO BREAKING CHANGES)
         // ==============================================
-        let prompt: String
+        var prompt: String = ""
         let aiTemperature: Double
 
+        var suffixPrompt = ""
+        if !wordRules.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            
+            suffixPrompt = """
+            ----------------------------------------------------------------------
+            IMPORTANT: The following word rules **OVERRIDE ALL OTHER RULES** if there is a conflict.
+            You MUST follow these word rules strictly, no exceptions.                
+            \(wordRules)
+            These rules hold the highest priority
+            ----------------------------------------------------------------------
+            """
+        }
+
+        // Then concatenate to main prompt
+        
         switch transcribeMode {
         case .fast:
             // FAST: Quick, lightweight analysis
             prompt = """
-            Quick grammar check for TOEFL speaking.
-            Only list key errors with *.
-            Keep it short.\(wordRules)
-            
+            You are a TOEFL iBT Speaking examiner.
+
+            IMPORTANT: List every grammar error using * bullet points.
+            Then provide an improved version of the transcript.
             Transcript: \(trimmed)
             """
             aiTemperature = 0.2
@@ -85,10 +102,14 @@ final class GrammarAnalyzer {
             // BALANCED: Normal check
             prompt = """
             You are a TOEFL iBT Speaking examiner.
-            Correct the transcript briefly and list grammar errors with *.\(wordRules)
-            
+
+            IMPORTANT: List every grammar error using * bullet points.
+            \(suffixPrompt)
+            Then provide an improved version of the transcript.
+
             Transcript: \(trimmed)
             """
+  //          prompt = prompt + suffixPrompt
             aiTemperature = 0.1
             
         case .accurate:
@@ -99,16 +120,11 @@ final class GrammarAnalyzer {
                 FIRST: Provide a TOEFL 6.0 full-score revised version of the transcript.
                 THEN: List all grammar errors as bullet points (*).
 
-                ----------------------------------------------------------------------
-                IMPORTANT: The following word rules **OVERRIDE ALL OTHER RULES** if there is a conflict.
-                You MUST follow these word rules strictly, no exceptions.
-                \(wordRules)
-                ----------------------------------------------------------------------
-
                 Rules:
                 - Correct all tense, article, preposition, and structure errors.
                 - Use formal, academic, natural spoken English.
                 - Do NOT add extra explanations.
+                \(suffixPrompt)
                 - Output format STRICTLY like this:
                 
                 ---
@@ -127,6 +143,8 @@ final class GrammarAnalyzer {
             aiTemperature = 0.05
         }
 
+
+        
         // ⬇️ PUT THE PRINT HERE ⬇️
         print("✅ FINAL PROMPT SENT TO AI:\n\(prompt)\n──────────────────────────")
         // 👇 YOUR ORIGINAL NETWORK CODE — NO CHANGES
@@ -148,24 +166,31 @@ final class GrammarAnalyzer {
             let res = try JSONDecoder().decode(AIResponse.self, from: data)
             let feedback = res.choices.first?.message.content ?? "No feedback"
 
-            let components = feedback.components(separatedBy: "Grammar Errors:")
-            let revisedText = components.first?.components(separatedBy: "TOEFL 6.0 Revised Version:").last?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let errorsText = components.count > 1 ? components[1] : ""
 
-            let errorLines = errorsText.components(separatedBy: .newlines)
+            let errorLines = feedback.components(separatedBy: .newlines)
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty && $0.starts(with: "*") }
+                .filter { line in
+                    guard !line.isEmpty else { return false }
+                    // Match lines starting with *, •, -, or numbered bullets like 1.
+                    let bulletChars: Set<Character> = ["*", "•", "-"]
+                    if let firstChar = line.first, bulletChars.contains(firstChar) {
+                        return true
+                    }
+                    // Match numbered bullets like "1. Error..."
+                    let trimmedLine = line.trimmingCharacters(in: .decimalDigits)
+                    return trimmedLine.starts(with: ". ")
+                }
 
             var issues: [GrammarIssue] = []
             
-            // ✅ Show revised version ONLY for balanced/accurate
-            if transcribeMode != .fast {
-                issues.append(GrammarIssue(
-                    id: UUID(),
-                    message: "TOEFL 6.0 Revised Version:\n\(revisedText)",
-                    snippet: ""
-                ))
-            }
+//            // ✅ Show revised version ONLY for balanced/accurate
+//            if transcribeMode != .fast {
+//                issues.append(GrammarIssue(
+//                    id: UUID(),
+//                    message: "TOEFL 6.0 Revised Version:\n\(revisedText)",
+//                    snippet: ""
+//                ))
+//            }
 
             for line in errorLines {
                 issues.append(GrammarIssue(
