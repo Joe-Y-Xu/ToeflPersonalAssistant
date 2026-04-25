@@ -88,14 +88,10 @@ final class GrammarAnalyzer {
                 .filter { !$0.isEmpty && $0.starts(with: "*") }
 
             // ✅ NOW WE USE THE STRUCTURED OBJECT!
-            let errors = errorLines.map {
-                GrammarError(id: UUID(), message: $0, type: "grammar")
-            }
+//            let errors = errorLines.map {
+//                GrammarError(id: UUID(), message: $0, type: "grammar")
+//            }
             
-            let structuredFeedback = TOEFLFeedback(
-                revisedSentence: revisedText,
-                grammarErrors: errors
-            )
 
             // Convert to UI model
             var issues: [GrammarIssue] = []

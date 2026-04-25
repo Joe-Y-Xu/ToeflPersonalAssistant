@@ -50,12 +50,12 @@ struct ContentView: View {
                                     viewModel.setAttentionModeEnabled(!viewModel.isAttentionModeEnabled)
                                 } label: {
                                     Label(
-                                        viewModel.isAttentionModeEnabled ? "Attention On" : "Attention Off",
-                                        systemImage: viewModel.isAttentionModeEnabled ? "scope" : "scope"
+                                        viewModel.isAttentionModeEnabled ? "Attention Mode ON" : "Attention Mode OFF",
+                                        systemImage: viewModel.isAttentionModeEnabled ? "checkmark.circle.fill" : "circle"
                                     )
                                 }
-                                .buttonStyle(.bordered)
-                                .tint(viewModel.isAttentionModeEnabled ? .orange : nil)
+                                .buttonStyle(.borderedProminent)
+                                .tint(viewModel.isAttentionModeEnabled ? .green : .secondary)
                                 .disabled(viewModel.isRecording || viewModel.isAnalyzing)
                             }
 
@@ -155,24 +155,31 @@ struct ContentView: View {
                                                 if issue.message.starts(with: "*") && !issue.message.contains("TOEFL 6.0 Revised Version") {
                                                     HStack(spacing: 8) {
                                                         Spacer()
+                                                        
+                                                        // 🎯 MARK AS ATTENTION (toggle)
                                                         Button {
                                                             viewModel.toggleAttentionSelection(for: issue)
                                                         } label: {
-                                                            Label(viewModel.isAttentionSelected(issue) ? "Attention On" : "Attention Off",
-                                                                  systemImage: viewModel.isAttentionSelected(issue) ? "bell.fill" : "bell")
+                                                            Label(
+                                                                viewModel.isAttentionSelected(issue) ? "Watched" : "Watch",
+                                                                systemImage: viewModel.isAttentionSelected(issue) ? "star.fill" : "star"
+                                                            )
                                                         }
                                                         .buttonStyle(.bordered)
-                                                        .tint(viewModel.isAttentionSelected(issue) ? .blue : nil)
+                                                        .tint(viewModel.isAttentionSelected(issue) ? .indigo : nil)
                                                         .controlSize(.small)
-
+                                                        
+                                                        // 🙈 IGNORE BUTTON
                                                         Button {
                                                             viewModel.toggleIgnoreSelection(for: issue)
                                                         } label: {
-                                                            Label(viewModel.isIgnored(issue) ? "Ignore On" : "Ignore Off",
-                                                                  systemImage: viewModel.isIgnored(issue) ? "eye.slash.fill" : "eye.slash")
+                                                            Label(
+                                                                viewModel.isIgnored(issue) ? "Ignored" : "Ignore",
+                                                                systemImage: viewModel.isIgnored(issue) ? "eye.slash.fill" : "eye.slash"
+                                                            )
                                                         }
                                                         .buttonStyle(.bordered)
-                                                        .tint(viewModel.isIgnored(issue) ? .gray : nil)
+                                                        .tint(.gray)
                                                         .controlSize(.small)
                                                         .disabled(viewModel.isAttentionSelected(issue))
                                                     }
@@ -279,11 +286,13 @@ struct ContentView: View {
 private struct AttentionSummaryView: View {
     @ObservedObject var viewModel: SpeechPracticeViewModel
     @Environment(\.dismiss) private var dismiss
+    // 👇 保存你勾选的项目
+    @State private var selectedItems: Set<String> = []
 
     var body: some View {
         NavigationStack {
             List {
-                Section("Attention Mode A") {
+                Section("Attention Mode") {
                     Toggle(
                         "Track only selected attentions after each recording",
                         isOn: Binding(
@@ -300,6 +309,20 @@ private struct AttentionSummaryView: View {
                     } else {
                         ForEach(viewModel.selectedAttentionStatistics) { statistic in
                             HStack(alignment: .center, spacing: 12) {
+                                
+                                // ✅ 可点击的勾选框
+                                Button {
+                                    if selectedItems.contains(statistic.issueKey) {
+                                        selectedItems.remove(statistic.issueKey)
+                                    } else {
+                                        selectedItems.insert(statistic.issueKey)
+                                    }
+                                } label: {
+                                    Image(systemName: selectedItems.contains(statistic.issueKey) ? "checkmark.circle.fill" : "circle")
+                                        .foregroundColor(.blue)
+                                }
+                                .buttonStyle(.plain)
+
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(statistic.title)
                                     Text("Pass: \(statistic.passCount)   Fail: \(statistic.failCount)")
@@ -307,14 +330,6 @@ private struct AttentionSummaryView: View {
                                         .foregroundStyle(.secondary)
                                 }
                                 Spacer()
-                                Toggle(
-                                    "Enabled",
-                                    isOn: Binding(
-                                        get: { viewModel.isAttentionSelected(issueKey: statistic.issueKey) },
-                                        set: { viewModel.setAttentionSelection(isEnabled: $0, issueKey: statistic.issueKey, title: statistic.title) }
-                                    )
-                                )
-                                .labelsHidden()
                             }
                         }
                     }
@@ -327,6 +342,20 @@ private struct AttentionSummaryView: View {
                     } else {
                         ForEach(viewModel.selectedIgnoredIssues) { item in
                             HStack(alignment: .center, spacing: 12) {
+                                
+                                // ✅ SAME CHECKBOX as Attention section
+                                Button {
+                                    if selectedItems.contains(item.issueKey) {
+                                        selectedItems.remove(item.issueKey)
+                                    } else {
+                                        selectedItems.insert(item.issueKey)
+                                    }
+                                } label: {
+                                    Image(systemName: selectedItems.contains(item.issueKey) ? "checkmark.circle.fill" : "circle")
+                                        .foregroundColor(.blue)
+                                }
+                                .buttonStyle(.plain)
+
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(item.title)
                                     Text("Ignored in future analysis until turned off")
@@ -334,15 +363,6 @@ private struct AttentionSummaryView: View {
                                         .foregroundStyle(.secondary)
                                 }
                                 Spacer()
-                                Toggle(
-                                    "Enabled",
-                                    isOn: Binding(
-                                        get: { viewModel.isIgnored(issueKey: item.issueKey) },
-                                        set: { viewModel.setIgnoreSelection(isEnabled: $0, issueKey: item.issueKey, title: item.title) }
-                                    )
-                                )
-                                .labelsHidden()
-                                .disabled(viewModel.isAttentionSelected(issueKey: item.issueKey))
                             }
                         }
                     }
@@ -356,21 +376,26 @@ private struct AttentionSummaryView: View {
                     }
                 }
 
+                // ✅ 只删除选中的项目
                 if !viewModel.selectedAttentionStatistics.isEmpty {
                     ToolbarItem(placement: .destructiveAction) {
-                        Button("Clear Attentions") {
-                            viewModel.clearAllAttentions()
+                        Button("Clear Selected") {
+                            for key in selectedItems {
+                                viewModel.removeAttention(issueKey: key)
+                            }
+                            selectedItems.removeAll()
                         }
+                        .disabled(selectedItems.isEmpty)
                     }
                 }
-
-                if !viewModel.selectedIgnoredIssues.isEmpty {
-                    ToolbarItem {
-                        Button("Clear Ignores") {
-                            viewModel.clearAllIgnoredIssues()
-                        }
-                    }
-                }
+//
+//                if !viewModel.selectedIgnoredIssues.isEmpty {
+//                    ToolbarItem {
+//                        Button("Clear Ignores") {
+//                            viewModel.clearAllIgnoredIssues()
+//                        }
+//                    }
+//                }
             }
         }
         .frame(minWidth: 480, minHeight: 320)
@@ -484,8 +509,6 @@ struct NativeMacTextView: NSViewRepresentable {
 
 
 // Native Mac Text View with REAL-TIME GRAMMAR & SPELLING CHECK
-
-
 // ✅ PERFECT, NO ERRORS, MAC NATIVE TEXT VIEW
 struct NativeTextView: NSViewRepresentable {
     let text: String
