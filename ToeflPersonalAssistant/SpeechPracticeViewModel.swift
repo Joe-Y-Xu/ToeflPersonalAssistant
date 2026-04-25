@@ -413,8 +413,16 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
         history.removeAll { $0.id == id }
         persistHistory()
     }
+    
+    // 加到 class SpeechPracticeViewModel 里面
+    @Published var showClearHistoryAlert = false
 
     func clearHistory() {
+        showClearHistoryAlert = true
+    }
+
+    // 这个函数名必须完全一样！
+    func confirmClearHistory() {
         stopPlayback()
         history.removeAll()
         persistHistory()

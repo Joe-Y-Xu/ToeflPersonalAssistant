@@ -264,7 +264,16 @@ struct ContentView: View {
                 .zIndex(1)
             }
         }
+        .alert("Clear All History?", isPresented: $viewModel.showClearHistoryAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Clear", role: .destructive) {
+                viewModel.confirmClearHistory()
+            }
+        } message: {
+            Text("Are you sure you want to delete all history? This cannot be undone.")
+        }
     }
+    
 }
 
 private struct AttentionSummaryView: View {
@@ -508,7 +517,10 @@ struct NativeTextView: NSViewRepresentable {
         if nsView.string != text {
             nsView.string = text
         }
+        
     }
+    
+    
 }
 
 #Preview {
