@@ -27,7 +27,10 @@ final class GrammarAnalyzer {
     // ✅ ADD TRANSCRIBEMODE PARAM HERE
     func analyzeTOEFLGrammar(
         text: String,
-        transcribeMode: TranscribeMode  // 👈 NEW PARAM
+        transcribeMode: TranscribeMode, // 👈 NEW PARAM
+        attentionStatistics: [AttentionStatistic],
+            selectedAttentionKeys: Set<String>,
+            ignoredIssueItems: [IssuePreferenceItem]
     ) async -> [GrammarIssue] {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -35,6 +38,30 @@ final class GrammarAnalyzer {
                 GrammarIssue(id: UUID(), message: "No speech detected", snippet: "")
             ]
         }
+        
+        // ==============================================
+        // ✅ YOUR WATCH / IGNORE WORDS (BUILT INTO PROMPT)
+        // ==============================================
+        let focusWords = attentionStatistics
+            .filter { selectedAttentionKeys.contains($0.id) }
+            .map { $0.title }
+            .joined(separator: ", ")
+
+        let avoidWords = ignoredIssueItems
+            .map { $0.title }
+            .joined(separator: ", ")
+
+        var focusPromptPart = ""
+        if !focusWords.isEmpty {
+            focusPromptPart = "\nFocus on these terms: \(focusWords)."
+        }
+
+        var avoidPromptPart = ""
+        if !avoidWords.isEmpty {
+            avoidPromptPart = "\nDo NOT use these terms: \(avoidWords)."
+        }
+
+        let wordRules = focusPromptPart + avoidPromptPart
 
         // ==============================================
         // ✅ DYNAMIC PROMPT & AI TEMPERATURE (NO BREAKING CHANGES)
@@ -48,7 +75,7 @@ final class GrammarAnalyzer {
             prompt = """
             Quick grammar check for TOEFL speaking.
             Only list key errors with *.
-            Keep it short.
+            Keep it short.\(wordRules)
             
             Transcript: \(trimmed)
             """
@@ -58,7 +85,7 @@ final class GrammarAnalyzer {
             // BALANCED: Normal check
             prompt = """
             You are a TOEFL iBT Speaking examiner.
-            Correct the transcript briefly and list grammar errors with *.
+            Correct the transcript briefly and list grammar errors with *.\(wordRules)
             
             Transcript: \(trimmed)
             """
@@ -67,32 +94,41 @@ final class GrammarAnalyzer {
         case .accurate:
             // ✅ YOUR ORIGINAL FULL PROMPT (NO CHANGES)
             prompt = """
-            You are an official 2026 TOEFL iBT Speaking examiner (max score 6.0).
-            
-            FIRST: Provide a TOEFL 6.0 full-score revised version of the transcript.
-            THEN: List all grammar errors as bullet points (*).
-            
-            Rules:
-            - Correct all tense, article, preposition, and structure errors.
-            - Use formal, academic, natural spoken English.
-            - Do NOT add extra explanations.
-            - Output format STRICTLY like this:
-            
-            ---
-            TOEFL 6.0 Revised Version:
-            [your revised sentence]
-            
-            Grammar Errors:
-            * error 1
-            * error 2
-            * error 3
-            ---
-            
-            Transcript: \(trimmed)
-            """
+                You are an official 2026 TOEFL iBT Speaking examiner (max score 6.0).
+                
+                FIRST: Provide a TOEFL 6.0 full-score revised version of the transcript.
+                THEN: List all grammar errors as bullet points (*).
+
+                ----------------------------------------------------------------------
+                IMPORTANT: The following word rules **OVERRIDE ALL OTHER RULES** if there is a conflict.
+                You MUST follow these word rules strictly, no exceptions.
+                \(wordRules)
+                ----------------------------------------------------------------------
+
+                Rules:
+                - Correct all tense, article, preposition, and structure errors.
+                - Use formal, academic, natural spoken English.
+                - Do NOT add extra explanations.
+                - Output format STRICTLY like this:
+                
+                ---
+                TOEFL 6.0 Revised Version:
+                [your revised sentence]
+                
+                Grammar Errors:
+                * error 1
+                * error 2
+                * error 3
+                ---
+                
+                Transcript: \(trimmed)
+                """
+
             aiTemperature = 0.05
         }
 
+        // ⬇️ PUT THE PRINT HERE ⬇️
+        print("✅ FINAL PROMPT SENT TO AI:\n\(prompt)\n──────────────────────────")
         // 👇 YOUR ORIGINAL NETWORK CODE — NO CHANGES
         let url = URL(string: "http://127.0.0.1:1234/v1/chat/completions")!
         var req = URLRequest(url: url)
