@@ -46,17 +46,33 @@ struct ContentView: View {
                                 .buttonStyle(.bordered)
                                 .disabled(!viewModel.isRecording)
 
-                                Button {
-                                    viewModel.setAttentionModeEnabled(!viewModel.isAttentionModeEnabled)
-                                } label: {
-                                    Label(
-                                        viewModel.isAttentionModeEnabled ? "Attention Mode ON" : "Attention Mode OFF",
-                                        systemImage: viewModel.isAttentionModeEnabled ? "checkmark.circle.fill" : "circle"
-                                    )
+                                // ✅ ORIGINAL Attention Mode + NEW Accuracy Button (in same HStack)
+                                HStack(spacing: 8) {
+                                    Button {
+                                        viewModel.setAttentionModeEnabled(!viewModel.isAttentionModeEnabled)
+                                    } label: {
+                                        Label(
+                                            viewModel.isAttentionModeEnabled ? "Attention Mode ON" : "Attention Mode OFF",
+                                            systemImage: viewModel.isAttentionModeEnabled ? "checkmark.circle.fill" : "circle"
+                                        )
+                                    }
+                                    .buttonStyle(.bordered)
+
+                                    // ✅ NEW: 3-State Accuracy Menu (Fast / Balanced / Accurate)
+                                    Menu {
+                                        ForEach(TranscribeMode.allCases) { mode in
+                                            Button(mode.displayName) {
+                                                viewModel.transcribeMode = mode
+                                            }
+                                        }
+                                    } label: {
+                                        Text(viewModel.transcribeMode.displayName.uppercased())
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .tint(.blue)
                                 }
-                                .buttonStyle(.borderedProminent)
-                                .tint(viewModel.isAttentionModeEnabled ? .green : .secondary)
-                                .disabled(viewModel.isRecording || viewModel.isAnalyzing)
+                                
+                                
                             }
 
                             Button {
@@ -107,10 +123,7 @@ struct ContentView: View {
                                         }
                                         .buttonStyle(.bordered)
                                         
-                                        // ✅ REPLACED WITH GRAMMAR CHECK VIEW ✅
-                                        GrammarHighlightView(text: viewModel.latestTranscript)
-                                            .frame(height: 140)
-                                        
+                                        TranscriptScrollView(text: viewModel.latestTranscript)
                                     }
                                 }
                             }
@@ -179,7 +192,6 @@ struct ContentView: View {
                                                             )
                                                         }
                                                         .buttonStyle(.bordered)
-                                                        .tint(.gray)
                                                         .controlSize(.small)
                                                         .disabled(viewModel.isAttentionSelected(issue))
                                                     }
@@ -281,6 +293,22 @@ struct ContentView: View {
         }
     }
     
+}
+
+struct TranscriptScrollView: View {
+    let text: String
+    
+    var body: some View {
+        ScrollView {
+            // Use a basic Text view to test visibility first
+            Text(text)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+        }
+        .frame(minHeight: 80, maxHeight: 260) // 👈 Enforce minimum height
+        .background(.gray.opacity(0.15))
+        .cornerRadius(8)
+    }
 }
 
 private struct AttentionSummaryView: View {

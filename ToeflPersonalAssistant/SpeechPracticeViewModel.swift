@@ -140,7 +140,8 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
     @Published private(set) var attentionStatistics: [AttentionStatistic] = []
     @Published private(set) var ignoredIssueKeys: Set<String> = []
     @Published private(set) var ignoredIssueItems: [IssuePreferenceItem] = []
-
+    @Published var transcribeMode: TranscribeMode = .fast
+    
     let maxDuration: TimeInterval = 45
 
     var selectedAttentionStatistics: [AttentionStatistic] {
@@ -891,7 +892,7 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
 // Large language model
     // ✅ REPLACES OLD FUNCTION — CLEAN & SIMPLE
     private func analyzeGrammar(in text: String) async -> [GrammarIssue] {
-        await GrammarAnalyzer.shared.analyzeTOEFLGrammar(text: text)
+        await GrammarAnalyzer.shared.analyzeTOEFLGrammar(text: text, transcribeMode: transcribeMode)
     }
     
     private func splitIntoSentences(_ text: String) -> [String] {
