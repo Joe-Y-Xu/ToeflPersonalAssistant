@@ -136,11 +136,13 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
     @Published var isAttentionModeEnabled = false
     @Published private(set) var currentlyPlayingRecordID: UUID?
     @Published private(set) var isPlayingLatestRecording = false
+    
     @Published private(set) var selectedAttentionKeys: Set<String> = []
     @Published private(set) var attentionStatistics: [AttentionStatistic] = []
     @Published private(set) var ignoredIssueKeys: Set<String> = []
     @Published private(set) var ignoredIssueItems: [IssuePreferenceItem] = []
-
+    @Published var transcribeMode: TranscribeMode = .fast
+    
     let maxDuration: TimeInterval = 45
 
     var selectedAttentionStatistics: [AttentionStatistic] {
@@ -176,6 +178,33 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
         loadIgnoredIssues()
         sanitizePreferences()
         isAttentionModeEnabled = UserDefaults.standard.bool(forKey: attentionModeStorageKey)
+    }
+    
+    // ✅ FOR YOUR VARIABLES: selectedAttentionKeys + ignoredIssueItems
+    func generateTranscriptionPrompt() -> String {
+        // Base clear prompt for Whisper
+        var prompt = "Transcribe the audio clearly and accurately in American English."
+        
+        // 🔹 Add WORDS TO FOCUS (Watch List)
+        let focusTitles = attentionStatistics
+            .filter { selectedAttentionKeys.contains($0.id) }
+            .map { $0.title }
+        
+        if !focusTitles.isEmpty {
+            let focusString = focusTitles.joined(separator: ", ")
+            prompt += " Focus on these key terms: \(focusString)."
+        }
+        
+        // 🔹 Add WORDS TO AVOID (Ignore List)
+        let ignoreTitles = ignoredIssueItems
+            .map { $0.title }
+        
+        if !ignoreTitles.isEmpty {
+            let ignoreString = ignoreTitles.joined(separator: ", ")
+            prompt += " Do NOT transcribe these words: \(ignoreString)."
+        }
+        
+        return prompt
     }
 
     func startRecording() {
@@ -891,7 +920,13 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
 // Large language model
     // ✅ REPLACES OLD FUNCTION — CLEAN & SIMPLE
     private func analyzeGrammar(in text: String) async -> [GrammarIssue] {
-        await GrammarAnalyzer.shared.analyzeTOEFLGrammar(text: text)
+        await GrammarAnalyzer.shared.analyzeTOEFLGrammar(
+                text: text, 
+                transcribeMode: transcribeMode,
+                attentionStatistics: attentionStatistics,
+                selectedAttentionKeys: selectedAttentionKeys,
+                ignoredIssueItems: ignoredIssueItems
+        )
     }
     
     private func splitIntoSentences(_ text: String) -> [String] {
