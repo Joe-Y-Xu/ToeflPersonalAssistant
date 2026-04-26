@@ -79,8 +79,8 @@ struct AttentionOutcome: Codable, Identifiable, Hashable {
 }
 
 struct AttentionStatistic: Codable, Identifiable, Hashable {
-    let issueKey: String
-    let title: String
+    var issueKey: String
+    var title: String
     var passCount: Int
     var failCount: Int
 
@@ -88,8 +88,8 @@ struct AttentionStatistic: Codable, Identifiable, Hashable {
 }
 
 struct IssuePreferenceItem: Codable, Identifiable, Hashable {
-    let issueKey: String
-    let title: String
+    var issueKey: String
+    var title: String
 
     var id: String { issueKey }
 }
@@ -211,6 +211,38 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
         loadIgnoredIssues()
         sanitizePreferences()
         isAttentionModeEnabled = UserDefaults.standard.bool(forKey: attentionModeStorageKey)
+    }
+    
+    // MARK: - Edit Attention / Ignore Item
+    func updateAttentionOrIgnoreItem(oldKey: String, newTitle: String) {
+        let newKey = newTitle
+        
+        // Update Attention
+        if let index = attentionStatistics.firstIndex(where: { $0.issueKey == oldKey }) {
+            attentionStatistics[index].title = newTitle
+            attentionStatistics[index].issueKey = newKey
+        }
+        
+        // Update Ignored
+        if let index = ignoredIssueItems.firstIndex(where: { $0.issueKey == oldKey }) {
+            ignoredIssueItems[index].title = newTitle
+            ignoredIssueItems[index].issueKey = newKey
+        }
+        
+        // Update key sets
+        if selectedAttentionKeys.contains(oldKey) {
+            selectedAttentionKeys.remove(oldKey)
+            selectedAttentionKeys.insert(newKey)
+        }
+        
+        if ignoredIssueKeys.contains(oldKey) {
+            ignoredIssueKeys.remove(oldKey)
+            ignoredIssueKeys.insert(newKey)
+        }
+        
+        persistAttentionSelections()
+        persistAttentionStatistics()
+        persistIgnoredIssues()
     }
     
     // ADD Removing ignoredIssues
@@ -759,6 +791,8 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
         let cleanedText = transcribedText.replacingOccurrences(of: "  ", with: " ")
         return cleanedText.isEmpty ? "(No transcription available)" : cleanedText
     }
+    
+    
 
 
     // ✅ APPLE AI GRAMMAR ANALYSIS (TOEFL-LEVEL ACCURACY)

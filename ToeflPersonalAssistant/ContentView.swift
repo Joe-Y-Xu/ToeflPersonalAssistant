@@ -343,7 +343,10 @@ private struct AttentionSummaryView: View {
     @Environment(\.dismiss) private var dismiss
     // 👇 保存你勾选的项目
     @State private var selectedItems: Set<String> = []
-
+    // editor
+    @State private var editingItem: IssuePreferenceItem?
+    @State private var editedTitle: String = ""
+    
     var body: some View {
         NavigationStack {
             List {
@@ -377,7 +380,7 @@ private struct AttentionSummaryView: View {
                                         .foregroundColor(.blue)
                                 }
                                 .buttonStyle(.plain)
-
+                                
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(statistic.title)
                                     Text("Pass: \(statistic.passCount)   Fail: \(statistic.failCount)")
@@ -385,6 +388,18 @@ private struct AttentionSummaryView: View {
                                         .foregroundStyle(.secondary)
                                 }
                                 Spacer()
+
+                                Button {
+                                    editedTitle = statistic.title
+                                    editingItem = IssuePreferenceItem(
+                                        issueKey: statistic.issueKey,
+                                        title: statistic.title
+                                    )
+                                } label: {
+                                    Image(systemName: "pencil")
+                                        .foregroundColor(.accentColor)
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
                     }
@@ -411,6 +426,7 @@ private struct AttentionSummaryView: View {
                                 }
                                 .buttonStyle(.plain)
 
+
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(item.title)
                                     Text("Ignored in future analysis until turned off")
@@ -418,6 +434,15 @@ private struct AttentionSummaryView: View {
                                         .foregroundStyle(.secondary)
                                 }
                                 Spacer()
+                                // ✅ ADDED EDIT BUTTON HERE
+                                Button {
+                                    editedTitle = item.title
+                                    editingItem = item
+                                } label: {
+                                    Image(systemName: "pencil")
+                                        .foregroundColor(.accentColor)
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
                     }
@@ -449,8 +474,38 @@ private struct AttentionSummaryView: View {
 
                 //
             }
+            .sheet(item: $editingItem) { item in
+                            NavigationStack {
+                                VStack(spacing: 20) {
+                                    TextField("Edit your item", text: $editedTitle)
+                                        .textFieldStyle(.roundedBorder)
+                                        .padding(.horizontal, 16)
+                                        .padding(.top, 20)
+                                    Spacer()
+                                }
+                                .navigationTitle("Edit Item")
+                                .toolbar {
+                                    ToolbarItem(placement: .cancellationAction) {
+                                        Button("Cancel") { editingItem = nil }
+                                    }
+                                    ToolbarItem(placement: .confirmationAction) {
+                                        Button("Save") {
+                                            saveEdit(item: item, newTitle: editedTitle)
+                                            editingItem = nil
+                                        }
+                                    }
+                                }
+                            }
+                            .frame(width: 400, height: 100)
+                        }
         }
-        .frame(minWidth: 480, minHeight: 320)
+        .frame(width: 450, height: 250)
+    }
+    private func saveEdit(item: IssuePreferenceItem, newTitle: String) {
+        viewModel.updateAttentionOrIgnoreItem(
+            oldKey: item.issueKey,
+            newTitle: newTitle
+        )
     }
 }
 
