@@ -186,6 +186,7 @@ final class GrammarAnalyzer {
 
         let body: [String: Any] = [
             "model": "lmstudio-community/Meta-Llama-3-8B-Instruct-GGUF",
+ //           "model": "phi-3-mini-4k-instruct",//
             "messages": [["role": "user", "content": prompt]],
             "temperature": aiTemperature  // ✅ DYNAMIC
         ]
