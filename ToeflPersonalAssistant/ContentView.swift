@@ -12,6 +12,31 @@ struct ContentView: View {
     @StateObject private var viewModel = SpeechPracticeViewModel()
     @State private var selectedRecord: SpeechRecord?
     @State private var showingAttentions = false
+    
+    private var latestRevisedText: String? {
+        viewModel.latestIssues.first(where: { isRevisedIssue($0.message) })
+            .map { issue in
+                issue.message
+                    .replacingOccurrences(of: "TOEFL 6.0 Revised Version:", with: "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+    }
+    
+    private var latestGrammarIssuesOnly: [GrammarIssue] {
+        viewModel.latestIssues.filter { !isRevisedIssue($0.message) }
+    }
+    
+    private func isRevisedIssue(_ message: String) -> Bool {
+        message.lowercased().contains("toefl 6.0 revised version:")
+    }
+    
+    private func isActionableGrammarIssue(_ message: String) -> Bool {
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("*") || trimmed.hasPrefix("-") || trimmed.hasPrefix("•") {
+            return true
+        }
+        return trimmed.range(of: #"^\d+\.\s+"#, options: .regularExpression) != nil
+    }
 
     var body: some View {
         NavigationStack {
@@ -153,19 +178,24 @@ struct ContentView: View {
                                     }
                                 }
                             }
+                            
+                            if let latestRevisedText, !latestRevisedText.isEmpty {
+                                GroupBox("TOEFL 6.0 Revised Version") {
+                                    TranscriptScrollView(text: latestRevisedText)
+                                }
+                            }
 
-                            if !viewModel.latestIssues.isEmpty {
+                            if !latestGrammarIssuesOnly.isEmpty {
                                 GroupBox("Detected Grammar Issues") {
                                     VStack(alignment: .leading, spacing: 12) {
-                                        ForEach(viewModel.latestIssues) { issue in
+                                        ForEach(latestGrammarIssuesOnly) { issue in
                                             VStack(alignment: .leading, spacing: 8) {
                                                 Text(issue.message)
                                                     .lineLimit(nil)
                                                     .fixedSize(horizontal: false, vertical: true)
                                                     .frame(maxWidth: .infinity, alignment: .leading)
                                                 
-                                                // Only show buttons if it's a grammar error (starts with "*" and not the revised version)
-                                                if issue.message.starts(with: "*") && !issue.message.contains("TOEFL 6.0 Revised Version") {
+                                                if isActionableGrammarIssue(issue.message) {
                                                     HStack(spacing: 8) {
                                                         Spacer()
                                                         
