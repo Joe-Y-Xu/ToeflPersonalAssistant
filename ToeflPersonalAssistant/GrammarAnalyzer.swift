@@ -6,6 +6,7 @@
 //
 
 import Foundation
+//import AImModelClients
 
 
 struct TOEFLFeedback: Codable {
@@ -22,7 +23,11 @@ struct GrammarError: Codable, Identifiable {
 
 final class GrammarAnalyzer {
     static let shared = GrammarAnalyzer()
-    private init() {}
+    private let chatClient: ChatCompletionProviding
+
+    private init(chatClient: ChatCompletionProviding = LocalChatCompletionClient()) {
+        self.chatClient = chatClient
+    }
     
     // ✅ ADD TRANSCRIBEMODE PARAM HERE
     func analyzeTOEFLGrammar(
@@ -35,7 +40,7 @@ final class GrammarAnalyzer {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return [
-                GrammarIssue(id: UUID(), message: "No speech detected", snippet: "")
+                GrammarIssue(id: UUID(), message: "No speech detected", snippet: "", kind: .system)
             ]
         }
         
@@ -72,102 +77,107 @@ final class GrammarAnalyzer {
         let aiTemperature: Double
 
         var suffixPrompt = ""
-        if !wordRules.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            
+        let trimmedWordRules = wordRules.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedWordRules.isEmpty {
             suffixPrompt = """
-            ----------------------------------------------------------------------
-            IMPORTANT: The following word rules **OVERRIDE ALL OTHER RULES** if there is a conflict.
-            You MUST follow these word rules strictly, no exceptions.                
+            IMPORTANT: The following word rules **HAVE HIGHEST PRIORITY** and override all other rules.
+            YOU MUST FOLLOW THESE RULES:
             \(wordRules)
-            These rules hold the highest priority
-            ----------------------------------------------------------------------
             """
         }
 
-        // Then concatenate to main prompt
-        
         switch transcribeMode {
         case .fast:
             prompt = """
             You are a strict TOEFL iBT Speaking examiner (target score: 6.0/6.0).
-            Your output must include BOTH:
-            1) A complete high-scoring revised speech.
-            2) Issue-by-issue corrections.
+            You MUST respond **ONLY with valid JSON** — NO extra text, NO markdown, NO explanations, NO --- separators.
 
-            OUTPUT FORMAT (strict):
-            ---
-            TOEFL 6.0 Revised Version:
-            [full revised speech for the entire transcript]
+            \(suffixPrompt)
 
-            Grammar Errors:
-            * Issue 1: [what is wrong]
-              Improvement: [how to fix this part]
-            * Issue 2: [what is wrong]
-              Improvement: [how to fix this part]
-            ---
+            Output ONLY a JSON object in THIS FORMAT:
+            {
+              "revised_text": "FULL TOEFL 6.0 revised speech here",
+              "issues": [
+                {
+                  "message": "Describe the grammar/usage issue clearly",
+                  "improvement": "Explain exactly how to fix it",
+                  "type": "grammar|spelling|punctuation|style|capitalization|wording",
+                  "isActionable": true
+                }
+              ]
+            }
 
             Rules:
-            - Revise the WHOLE speech, not one sentence only.
-            - Keep original meaning, but make grammar and phrasing TOEFL-appropriate.
-            - Include each issue with a concrete improvement.
+            - revised_text must be the COMPLETE corrected speech.
+            - Keep original meaning.
+            - Use natural, academic TOEFL English.
+            - issues must be all real errors — NO separators, NO fake items.
+            - isActionable = true for all real issues.
+            - DO NOT include any text outside the JSON.
+
             Transcript: \(trimmed)
             """
             aiTemperature = 0.1
-            
 
         case .balanced:
             prompt = """
             You are a TOEFL iBT Speaking examiner (target score: 6.0/6.0).
-            Provide a complete revised speech and issue-by-issue improvements.
+            Respond **ONLY with valid JSON** — NO extra text, NO --- separators, NO lists.
 
-            OUTPUT FORMAT (strict):
-            ---
-            TOEFL 6.0 Revised Version:
-            [full revised speech for the entire transcript]
+            \(suffixPrompt)
 
-            Grammar Errors:
-            * Issue 1: [what is wrong]
-              Improvement: [how to fix this part]
-            * Issue 2: [what is wrong]
-              Improvement: [how to fix this part]
-            ---
+            Output ONLY JSON:
+            {
+              "revised_text": "FULL corrected speech",
+              "issues": [
+                {
+                  "message": "What is wrong",
+                  "improvement": "How to fix",
+                  "type": "grammar|spelling|punctuation|style|capitalization|wording",
+                  "isActionable": true
+                }
+              ]
+            }
 
             Rules:
-            - The revised version must cover the ENTIRE speech.
-            - Each bullet must include an explicit "Improvement:" line.
-            - Focus on grammar, clarity, and formal TOEFL speaking style.
+            - revised_text = complete full speech
+            - Each issue must be real and actionable
+            - NO non-actionable lines like dividers or notes
+            - DO NOT output anything outside the JSON
+
             Transcript: \(trimmed)
             """
             aiTemperature = 0.1
-            
+
         case .accurate:
             prompt = """
-                You are an official 2026 TOEFL iBT Speaking examiner (max score 6.0).
-                
-                FIRST: Provide a complete TOEFL 6.0 full-score revised version of the ENTIRE transcript.
-                THEN: List all grammar errors with specific improvements.
+            You are an official 2026 TOEFL iBT Speaking examiner (max score 6.0).
+            You MUST output **ONLY valid JSON** — NO extra text, NO separators, NO markdown, NO --- lines.
 
-                Rules:
-                - Correct all tense, article, preposition, and structure errors.
-                - Use formal, academic, natural spoken English.
-                - Keep the original ideas while improving fluency and grammar.
-                - For each issue, provide a concrete correction after "Improvement:".
-                - Output format STRICTLY like this:
-                
-                ---
-                TOEFL 6.0 Revised Version:
-                [full revised speech for the entire transcript]
-                
-                Grammar Errors:
-                * Issue 1: [what is wrong]
-                  Improvement: [how to fix this part]
-                * Issue 2: [what is wrong]
-                  Improvement: [how to fix this part]
-                ---
-                
-                Transcript: \(trimmed)
-                """
+            \(suffixPrompt)
 
+            Return ONLY JSON in this structure:
+            {
+              "revised_text": "Complete TOEFL 6.0 full-score speech",
+              "issues": [
+                {
+                  "message": "Clear description of the error",
+                  "improvement": "Exact correction",
+                  "type": "grammar|spelling|punctuation|style|capitalization|wording",
+                  "isActionable": true
+                }
+              ]
+            }
+
+            Strict Rules:
+            - Correct all tense, article, preposition, structure errors.
+            - Use formal academic English.
+            - Keep original ideas.
+            - NO non-actionable entries.
+            - NO text outside JSON.
+
+            Transcript: \(trimmed)
+            """
             aiTemperature = 0.05
         }
 
@@ -178,25 +188,8 @@ final class GrammarAnalyzer {
         
         // ⬇️ PUT THE PRINT HERE ⬇️
         print("✅ FINAL PROMPT SENT TO AI:\n\(prompt)\n──────────────────────────")
-        // 👇 YOUR ORIGINAL NETWORK CODE — NO CHANGES
-        let url = URL(string: "http://127.0.0.1:1234/v1/chat/completions")!
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let body: [String: Any] = [
-            "model": "lmstudio-community/Meta-Llama-3-8B-Instruct-GGUF",
- //           "model": "phi-3-mini-4k-instruct",//
-            "messages": [["role": "user", "content": prompt]],
-            "temperature": aiTemperature  // ✅ DYNAMIC
-        ]
-
-        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-
         do {
-            let (data, _) = try await URLSession.shared.data(for: req)
-            let res = try JSONDecoder().decode(AIResponse.self, from: data)
-            let feedback = res.choices.first?.message.content ?? "No feedback"
+            let feedback = try await chatClient.complete(prompt: prompt, temperature: aiTemperature)
             let parsed = parseFeedback(feedback)
             let revisedText = parsed.correctedTranscript
             let errorLines = parsed.grammarErrors
@@ -207,7 +200,8 @@ final class GrammarAnalyzer {
                 issues.append(GrammarIssue(
                     id: UUID(),
                     message: "TOEFL 6.0 Revised Version:\n\(revisedText)",
-                    snippet: ""
+                    snippet: "",
+                    kind: .revisedVersion
                 ))
             }
 
@@ -215,7 +209,8 @@ final class GrammarAnalyzer {
                 issues.append(GrammarIssue(
                     id: UUID(),
                     message: line,
-                    snippet: ""
+                    snippet: "",
+                    kind: .grammarIssue
                 ))
             }
 
@@ -223,7 +218,7 @@ final class GrammarAnalyzer {
 
         } catch {
             return [
-                GrammarIssue(id: UUID(), message: "Server error", snippet: "")
+                GrammarIssue(id: UUID(), message: "Server error", snippet: "", kind: .system)
             ]
         }
     }
@@ -280,41 +275,41 @@ final class GrammarAnalyzer {
     }
 
     private func parseJSONFeedback(from raw: String) -> ParsedFeedback? {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        let candidates = [
-            trimmed,
-            extractCodeFenceJSON(from: trimmed)
-        ].compactMap { $0 }
-
-        for candidate in candidates {
-            guard
-                let data = candidate.data(using: .utf8),
-                let jsonObject = try? JSONSerialization.jsonObject(with: data),
-                let json = jsonObject as? [String: Any]
-            else {
-                continue
+        // 直接解析你现在的 JSON 格式：revised_text + issues
+        guard let data = raw.data(using: .utf8) else { return nil }
+        
+        do {
+            // 匹配你 AI 返回的真实结构
+            struct JsonResponse: Codable {
+                let revised_text: String
+                let issues: [Issue]
+                
+                struct Issue: Codable {
+                    let message: String
+                    let improvement: String
+                    let type: String
+                    let isActionable: Bool
+                }
             }
-
-            let corrected = (json["correctedTranscript"] as? String)
-                ?? (json["revisedSentence"] as? String)
-                ?? (json["revised_version"] as? String)
-                ?? (json["revisedVersion"] as? String)
-                ?? ""
-
-            let errorsFromArray = (json["grammarErrors"] as? [String]) ?? []
-            let errorsFromText = (json["grammarErrors"] as? String)
-                .map { $0.components(separatedBy: .newlines).filter { isBulletLine($0) } } ?? []
-            let mergedErrors = errorsFromArray.isEmpty ? errorsFromText : errorsFromArray
-
-            if !corrected.isEmpty || !mergedErrors.isEmpty {
-                return ParsedFeedback(
-                    correctedTranscript: corrected.trimmingCharacters(in: .whitespacesAndNewlines),
-                    grammarErrors: mergedErrors.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                )
+            
+            // 解码 JSON
+            let response = try JSONDecoder().decode(JsonResponse.self, from: data)
+            
+            // 把错误拼接成你 UI 能显示的文字
+            let errorLines = response.issues.map { issue in
+                "\(issue.message)\nImprovement: \(issue.improvement)"
             }
+            
+            // 返回解析好的内容 → 你的界面马上显示
+            return ParsedFeedback(
+                correctedTranscript: response.revised_text,
+                grammarErrors: errorLines
+            )
+            
+        } catch {
+            print("🔴 JSON 解析失败: \(error.localizedDescription)")
+            return nil
         }
-
-        return nil
     }
 
     private func extractCodeFenceJSON(from text: String) -> String? {
@@ -342,18 +337,7 @@ final class GrammarAnalyzer {
     }
 }
 
-// MARK: - OpenAI Models
 private struct ParsedFeedback {
     let correctedTranscript: String
     let grammarErrors: [String]
-}
-
-private struct AIResponse: Codable {
-    let choices: [Choice]
-}
-private struct Choice: Codable {
-    let message: Message
-}
-private struct Message: Codable {
-    let content: String
 }

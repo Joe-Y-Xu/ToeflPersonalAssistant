@@ -18,18 +18,45 @@ import NaturalLanguage
 #endif
 
 struct GrammarIssue: Codable, Identifiable, Hashable {
+    enum Kind: String, Codable, Hashable {
+        case revisedVersion
+        case grammarIssue
+        case system
+    }
+
     let id: UUID
     let message: String
     let snippet: String
+    let kind: Kind
 
     var attentionKey: String {
         Self.makeAttentionKey(from: message)
     }
 
-    init(id: UUID = UUID(), message: String, snippet: String) {
+    var isActionable: Bool {
+        kind == .grammarIssue
+    }
+
+    init(id: UUID = UUID(), message: String, snippet: String, kind: Kind = .grammarIssue) {
         self.id = id
         self.message = message
         self.snippet = snippet
+        self.kind = kind
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case message
+        case snippet
+        case kind
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        message = try container.decode(String.self, forKey: .message)
+        snippet = try container.decode(String.self, forKey: .snippet)
+        kind = try container.decodeIfPresent(Kind.self, forKey: .kind) ?? .grammarIssue
     }
 
     nonisolated static func makeAttentionKey(from message: String) -> String {
@@ -172,7 +199,7 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
     private var audioPlayer: AVAudioPlayer?
     private let jsonEncoder = JSONEncoder()
     private let jsonDecoder = JSONDecoder()
-    private let whisperEndpoint = URL(string: "http://127.0.0.1:9000/v1/audio/transcriptions")!
+    private let whisperClient: WhisperTranscribing = LocalWhisperClient()
 
     override init() {
         super.init()
@@ -591,9 +618,10 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
             return "Attention review: \(failedCount) fail(s), \(passedCount) pass(es)."
         }
 
-        return issues.isEmpty
+        let grammarOnly = issues.filter { $0.kind == .grammarIssue }
+        return grammarOnly.isEmpty
             ? "No obvious grammar issues found."
-            : "Found \(issues.count) possible grammar issue(s)."
+            : "Found \(grammarOnly.count) possible grammar issue(s)."
     }
 
     private func makeRecordingURL() throws -> URL {
@@ -726,156 +754,10 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
     }
 
     
-    // MARK: - 调用你的本地 Whisper 服务器（超高精度）
-    // FOR MAC APP — LOCAL WHISPER TRANSCRIPTION (ENGLISH-OPTIMIZED)
-    // FOR MAC APP (M5 24GB) — LOCAL WHISPER TRANSCRIPTION (ENGLISH-OPTIMIZED)
     private func transcribeAudioFile(at url: URL) async throws -> String {
-        // 1. Safeguard against invalid server URL (replace force-unwrap with guard)
-        guard let serverURL = URL(string: "http://127.0.0.1:9000/transcribe") else {
-            throw NSError(domain: "LocalWhisper", code: -2, userInfo: [NSLocalizedDescriptionKey: "Invalid Whisper server URL"])
-        }
-        
-        var request = URLRequest(url: serverURL)
-        request.httpMethod = "POST"
-        request.timeoutInterval = 120 // M5: 2 mins for large-v3 (plenty of time)
-        
-        let boundary = UUID().uuidString
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        
-        let audioData = try Data(contentsOf: url)
-        // Use unified multipart body function (M5-optimized params)
-        let body = makeWhisperMultipartBody(audioData: audioData, boundary: boundary, audioURL: url)
-        
-        request.httpBody = body
-        
-        // 2. M5-optimized URLSession (stable for large audio)
-        let sessionConfig = URLSessionConfiguration.default
-        sessionConfig.httpMaximumConnectionsPerHost = 1
-        sessionConfig.timeoutIntervalForRequest = 120
-        let session = URLSession(configuration: sessionConfig)
-        
-        let (data, response) = try await session.data(for: request)
-        
-        // 3. Improved error handling (detailed status code + server messages)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw NSError(domain: "LocalWhisper", code: -3, userInfo: [NSLocalizedDescriptionKey: "Invalid HTTP response from Whisper server"])
-        }
-        
-        guard httpResponse.statusCode == 200 else {
-            let serverErrorMsg = String(data: data, encoding: .utf8) ?? "No additional details"
-            let errorMsg = "Whisper server failed (status: \(httpResponse.statusCode)): \(serverErrorMsg)"
-            throw NSError(domain: "LocalWhisper", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: errorMsg])
-        }
-        
-        // 4. Use robust parsing function (preserve your original logic)
-        guard let transcribedText = parseWhisperText(from: data) else {
-            throw NSError(domain: "LocalWhisper", code: -4, userInfo: [NSLocalizedDescriptionKey: "Invalid transcription response format"])
-        }
-        
-        // 5. Final cleanup for English text (M5 output polish)
+        let transcribedText = try await whisperClient.transcribeAudio(at: url)
         let cleanedText = transcribedText.replacingOccurrences(of: "  ", with: " ")
         return cleanedText.isEmpty ? "(No transcription available)" : cleanedText
-    }
-
-    // MARK: - Unified Multipart Body (M5 24GB Optimized)
-    /// Creates multipart body with M5-tailored Whisper params (matches server)
-    private func makeWhisperMultipartBody(audioData: Data, boundary: String, audioURL: URL) -> Data {
-        var body = Data()
-        let lineBreak = "\r\n"
-        
-        // Helper to avoid repeated Data conversion
-        func append(_ string: String) {
-            body.append(Data(string.utf8))
-        }
-        
-        // --------------------------
-        // 1. Audio File (M5-Friendly: Preserve Original Format)
-        // --------------------------
-        let fileName = audioURL.lastPathComponent
-        let mimeType = mimeTypeForFile(at: audioURL) // Auto-detect MIME type (better than hardcoding)
-        
-        append("--\(boundary)\(lineBreak)")
-        append("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileName)\"\(lineBreak)")
-        append("Content-Type: \(mimeType)\(lineBreak)\(lineBreak)")
-        body.append(audioData)
-        append(lineBreak)
-        
-        // --------------------------
-        // 2. M5 24GB Optimized Whisper Params (English-Only)
-        // --------------------------
-        // Model: large-v3 (M5 24GB can handle this — max accuracy for English)
-        append("--\(boundary)\(lineBreak)")
-        append("Content-Disposition: form-data; name=\"model\"\(lineBreak)\(lineBreak)")
-        append("large-v3\(lineBreak)")
-        
-        // Force English (disable auto-detect — critical for accuracy)
-        append("--\(boundary)\(lineBreak)")
-        append("Content-Disposition: form-data; name=\"language\"\(lineBreak)\(lineBreak)")
-        append("en\(lineBreak)")
-        
-        // Temperature: 0.0 (deterministic — no random typos for English)
-        append("--\(boundary)\(lineBreak)")
-        append("Content-Disposition: form-data; name=\"temperature\"\(lineBreak)\(lineBreak)")
-        append("0.0\(lineBreak)")
-        
-        // Beam Size: 6 (M5 sweet spot — fast + accurate for English)
-        append("--\(boundary)\(lineBreak)")
-        append("Content-Disposition: form-data; name=\"beam_size\"\(lineBreak)\(lineBreak)")
-        append("6\(lineBreak)")
-        
-        // Best Of: 3 (M5-friendly accuracy boost — minimal RAM usage)
-        append("--\(boundary)\(lineBreak)")
-        append("Content-Disposition: form-data; name=\"best_of\"\(lineBreak)\(lineBreak)")
-        append("3\(lineBreak)")
-        
-        // --------------------------
-        // 3. Close Multipart Body
-        // --------------------------
-        append("--\(boundary)--\(lineBreak)")
-        
-        return body
-    }
-
-    // MARK: - Robust Transcription Parsing (Preserved + Enhanced)
-    private func parseWhisperText(from data: Data) -> String? {
-        // 1. Parse JSON (support multiple response formats)
-        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            // Priority 1: Standard "text" field (your server uses this)
-            if let text = json["text"] as? String {
-                return text.trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-            // Priority 2: Fallback to "transcript" (common in some Whisper wrappers)
-            if let transcript = json["transcript"] as? String {
-                return transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-            // Priority 3: Parse "segments" (for detailed transcriptions)
-            if let segments = json["segments"] as? [[String: Any]] {
-                let joined = segments.compactMap { $0["text"] as? String }.joined(separator: " ")
-                return joined.trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-        }
-        
-        // 2. Fallback to plain text (M5: handle edge cases)
-        if let plainText = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !plainText.isEmpty {
-            return plainText
-        }
-        
-        // 3. No valid text found
-        return nil
-    }
-
-    // MARK: - Helper: Auto-Detect MIME Type (M5-Friendly)
-    /// Avoids hardcoding audio types (works with .caf, .m4a, .wav, etc.)
-    private func mimeTypeForFile(at url: URL) -> String {
-        let pathExtension = url.pathExtension.lowercased()
-        switch pathExtension {
-        case "caf": return "audio/x-caf"
-        case "m4a": return "audio/m4a"
-        case "wav": return "audio/wav"
-        case "mp3": return "audio/mpeg"
-        default: return "audio/*" // Fallback for all other types
-        }
     }
 
 
@@ -1056,3 +938,7 @@ extension SpeechPracticeViewModel: AVAudioPlayerDelegate {
 }
 
 
+struct AIResponse: Codable {
+    let revised_text: String
+    let issues: [GrammarIssue]
+}

@@ -14,7 +14,7 @@ struct ContentView: View {
     @State private var showingAttentions = false
     
     private var latestRevisedText: String? {
-        viewModel.latestIssues.first(where: { isRevisedIssue($0.message) })
+        viewModel.latestIssues.first(where: { $0.kind == .revisedVersion || isRevisedIssue($0.message) })
             .map { issue in
                 issue.message
                     .replacingOccurrences(of: "TOEFL 6.0 Revised Version:", with: "")
@@ -23,7 +23,7 @@ struct ContentView: View {
     }
     
     private var latestGrammarIssuesOnly: [GrammarIssue] {
-        viewModel.latestIssues.filter { !isRevisedIssue($0.message) }
+        viewModel.latestIssues.filter { $0.kind == .grammarIssue && !isRevisedIssue($0.message) }
     }
     
     private func isRevisedIssue(_ message: String) -> Bool {
@@ -31,11 +31,8 @@ struct ContentView: View {
     }
     
     private func isActionableGrammarIssue(_ message: String) -> Bool {
-        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.hasPrefix("*") || trimmed.hasPrefix("-") || trimmed.hasPrefix("•") {
-            return true
-        }
-        return trimmed.range(of: #"^\d+\.\s+"#, options: .regularExpression) != nil
+        // JSON 模式：所有语法错误都是可操作项 → 直接返回 true
+        return true
     }
 
     var body: some View {
