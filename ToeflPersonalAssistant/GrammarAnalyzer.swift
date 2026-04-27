@@ -89,49 +89,45 @@ final class GrammarAnalyzer {
         switch transcribeMode {
         case .fast:
             prompt = """
-            You are a strict TOEFL iBT Speaking examiner (target score: 6.0/6.0).
-            You MUST respond **ONLY with valid JSON** — NO extra text, NO markdown, NO explanations, NO --- separators.
+                        Output ONLY a JSON object in THIS FORMAT:
+                        {
+                          "revised_text": "FULL TOEFL 6.0 revised speech here",
+                          "issues": [
+                            {
+                              "message": "Describe the grammar/usage issue clearly",
+                              "improvement": "Explain exactly how to fix it",
+                              "high_score_alternatives": ["phrase1","phrase2","phrase3"],
+                              "type": "grammar|spelling|punctuation|style|capitalization|wording",
+                              "isActionable": true
+                            }
+                          ]
+                        }
 
-            \(suffixPrompt)
+                        Rules:
+                        - **Revised Version**: revised_text must be the COMPLETE corrected speech, Keep original meaning.
+                        - **Grammar errors**: Subject-verb agreement, tense consistency, article/preposition misuse, illegal conjunction combinations.
+                        - **Redundancy & awkward phrasing**: Repetitive words, redundant clauses, and unnatural word order.
+                        - **Clarity & precision**: Vague expressions, overly simple sentence structure, and lack of logical flow.
+                        - **Academic tone**: Informal language, contractions, and non-idiomatic phrasing that would lower a TOEFL score.
+                        - ** improvement entry**: provide 3 or more distinct high-scoring TOEFL-level alternative phrases/expressions.
+                        - **high_score_alternatives** : Ensure alternative phrases are natural, academic, and suitable for TOEFL speaking.
+                        - **Responses**: DO NOT include any text outside the JSON.
 
-            Output ONLY a JSON object in THIS FORMAT:
-            {
-              "revised_text": "FULL TOEFL 6.0 revised speech here",
-              "issues": [
-                {
-                  "message": "Describe the grammar/usage issue clearly",
-                  "improvement": "Explain exactly how to fix it",
-                  "type": "grammar|spelling|punctuation|style|capitalization|wording",
-                  "isActionable": true
-                }
-              ]
-            }
-
-            Rules:
-            - revised_text must be the COMPLETE corrected speech.
-            - Keep original meaning.
-            - Use natural, academic TOEFL English.
-            - issues must be all real errors — NO separators, NO fake items.
-            - DO NOT include any text outside the JSON.
-
-            Transcript: \(trimmed)
-            """
+                        Transcript: \(trimmed)
+                        """
             aiTemperature = 0.1
 
         case .balanced:
             prompt = """
-            You are a TOEFL iBT Speaking examiner (target score: 6.0/6.0).
-            Respond **ONLY with valid JSON** — NO extra text, NO --- separators, NO lists.
-
-            \(suffixPrompt)
 
             Output ONLY JSON:
             {
               "revised_text": "FULL corrected speech",
               "issues": [
                 {
-                  "message": "What is wrong",
-                  "improvement": "How to fix",
+                  "message": "Describe the grammar/usage issue clearly",
+                  "improvement": "Explain exactly how to fix it",
+                  "high_score_alternatives": ["phrase1","phrase2","phrase3"],
                   "type": "grammar|spelling|punctuation|style|capitalization|wording",
                   "isActionable": true
                 }
@@ -141,6 +137,7 @@ final class GrammarAnalyzer {
             Rules:
             - Correct all tense, article, preposition, structure errors.
             - Use formal academic English.
+            - For every single improvement entry, provide **3 or more distinct high-scoring TOEFL-level alternative phrases/expressions.
             - Keep original ideas.
             - DO NOT output anything outside the JSON
 
@@ -150,18 +147,15 @@ final class GrammarAnalyzer {
 
         case .accurate:
             prompt = """
-            You are an official 2026 TOEFL iBT Speaking examiner (max score 6.0).
-            You MUST output **ONLY valid JSON** — NO extra text, NO separators, NO markdown, NO --- lines.
 
-            \(suffixPrompt)
-
-            Return ONLY JSON in this structure:
+            Output ONLY JSON:
             {
               "revised_text": "Complete TOEFL 6.0 full-score speech",
               "issues": [
                 {
-                  "message": "Clear description of the error",
-                  "improvement": "Exact correction",
+                  "message": "Describe the grammar/usage issue clearly",
+                  "improvement": "Explain exactly how to fix it",
+                  "high_score_alternatives": ["phrase1","phrase2","phrase3"],
                   "type": "grammar|spelling|punctuation|style|capitalization|wording",
                   "isActionable": true
                 }
@@ -172,7 +166,7 @@ final class GrammarAnalyzer {
             - Correct all tense, article, preposition, structure errors.
             - Use formal academic English.
             - Keep original ideas.
-            - NO non-actionable entries.
+            - For every single improvement entry, provide **3 or more distinct high-scoring TOEFL-level alternative phrases/expressions.
             - NO text outside JSON.
 
             Transcript: \(trimmed)
@@ -288,15 +282,34 @@ final class GrammarAnalyzer {
                     let improvement: String
                     let type: String
                     let isActionable: Bool
+                    let high_score_alternatives: [String]? // 👈 新增
                 }
             }
             
             // 解码 JSON
             let response = try JSONDecoder().decode(JsonResponse.self, from: data)
             
-            // 把错误拼接成你 UI 能显示的文字
             let errorLines = response.issues.map { issue in
-                "\(issue.message)\nImprovement: \(issue.improvement)"
+                var text = "\(issue.message)\nImprovement: \(issue.improvement)"
+                
+                if let alts = issue.high_score_alternatives, !alts.isEmpty {
+                    // Split any combined phrases (fixes your AI output)
+                    let allPhrases = alts.flatMap {
+                        $0.components(separatedBy: "; ")
+                    }.map {
+                        $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                    }.filter {
+                        !$0.isEmpty
+                    }
+                    
+                    // Number ALL alternatives, no limit
+                    let numbered = allPhrases.enumerated().map { index, item in
+                        "\(index + 1). \(item)"
+                    }.joined(separator: "\n")
+                    
+                    text += "\nHigh-score alternatives:\n\(numbered)"
+                }
+                return text
             }
             
             // 返回解析好的内容 → 你的界面马上显示

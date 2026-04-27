@@ -418,9 +418,6 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
         UserDefaults.standard.set(isEnabled, forKey: attentionModeStorageKey)
     }
 
-    func toggleAttentionSelection(for issue: GrammarIssue) {
-        setAttentionSelection(isEnabled: !isAttentionSelected(issue), issueKey: issue.attentionKey, title: issue.message)
-    }
 
     func removeAttention(issueKey: String) {
         setAttentionSelection(isEnabled: false, issueKey: issueKey, title: nil)
@@ -466,8 +463,15 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
         persistIgnoredIssues()
     }
 
+    func toggleAttentionSelection(for issue: GrammarIssue) {
+        let cleanTitle = issue.message.components(separatedBy: .newlines).first ?? issue.message
+            setAttentionSelection(isEnabled: !isAttentionSelected(issue), issueKey: issue.attentionKey, title: cleanTitle)
+    }
+
+    
     func toggleIgnoreSelection(for issue: GrammarIssue) {
-        setIgnoreSelection(isEnabled: !isIgnored(issue), issueKey: issue.attentionKey, title: issue.message)
+        let cleanTitle = issue.message.components(separatedBy: .newlines).first ?? issue.message
+            setIgnoreSelection(isEnabled: !isIgnored(issue), issueKey: issue.attentionKey, title: cleanTitle)
     }
 
     func setIgnoreSelection(isEnabled: Bool, issueKey: String, title: String?) {

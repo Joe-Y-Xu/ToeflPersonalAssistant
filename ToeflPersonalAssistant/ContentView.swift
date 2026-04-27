@@ -13,17 +13,23 @@ struct ContentView: View {
     @State private var selectedRecord: SpeechRecord?
     @State private var showingAttentions = false
     
+    // MARK: - 正确放在这里的属性
     private var latestRevisedText: String? {
-        viewModel.latestIssues.first(where: { $0.kind == .revisedVersion || isRevisedIssue($0.message) })
-            .map { issue in
-                issue.message
+        for issue in viewModel.latestIssues {
+            if issue.kind == .revisedVersion || isRevisedIssue(issue.message) {
+                let text = issue.message
                     .replacingOccurrences(of: "TOEFL 6.0 Revised Version:", with: "")
                     .trimmingCharacters(in: .whitespacesAndNewlines)
+                return text
             }
+        }
+        return nil
     }
     
     private var latestGrammarIssuesOnly: [GrammarIssue] {
-        viewModel.latestIssues.filter { $0.kind == .grammarIssue && !isRevisedIssue($0.message) }
+        let allGrammarIssues = viewModel.latestIssues.filter { $0.kind == .grammarIssue }
+        let finalIssues = allGrammarIssues.filter { !isRevisedIssue($0.message) }
+        return finalIssues
     }
     
     private func isRevisedIssue(_ message: String) -> Bool {
@@ -31,10 +37,10 @@ struct ContentView: View {
     }
     
     private func isActionableGrammarIssue(_ message: String) -> Bool {
-        // JSON 模式：所有语法错误都是可操作项 → 直接返回 true
         return true
     }
 
+    // MARK: - 只有 body 里面写 UI
     var body: some View {
         NavigationStack {
             ZStack {
@@ -68,19 +74,7 @@ struct ContentView: View {
                                 .buttonStyle(.bordered)
                                 .disabled(!viewModel.isRecording)
 
-                                // ✅ ORIGINAL Attention Mode + NEW Accuracy Button (in same HStack)
                                 HStack(spacing: 8) {
-//                                    Button {
-//                                        viewModel.setAttentionModeEnabled(!viewModel.isAttentionModeEnabled)
-//                                    } label: {
-//                                        Label(
-//                                            viewModel.isAttentionModeEnabled ? "Attention Mode ON" : "Attention Mode OFF",
-//                                            systemImage: viewModel.isAttentionModeEnabled ? "checkmark.circle.fill" : "circle"
-//                                        )
-//                                    }
-//                                    .buttonStyle(.bordered)
-
-                                    // ✅ NEW: 3-State Accuracy Menu (Fast / Balanced / Accurate)
                                     Menu {
                                         ForEach(TranscribeMode.allCases) { mode in
                                             Button(mode.displayName) {
@@ -93,8 +87,6 @@ struct ContentView: View {
                                     .buttonStyle(.bordered)
                                     .tint(.blue)
                                 }
-                                
-                                
                             }
 
                             Button {
@@ -130,11 +122,9 @@ struct ContentView: View {
                                 .buttonStyle(.bordered)
                             }
 
-
                             if !viewModel.latestTranscript.isEmpty {
                                 GroupBox("Latest Transcript") {
                                     VStack(alignment: .leading, spacing: 12) {
-                                        // Play Button
                                         Button {
                                             viewModel.toggleLatestRecordingPlayback()
                                         } label: {
@@ -182,52 +172,26 @@ struct ContentView: View {
                                 }
                             }
 
+                            // MARK: - 正确显示语法错误
+                            // 正确显示语法错误
                             if !latestGrammarIssuesOnly.isEmpty {
                                 GroupBox("Detected Grammar Issues") {
                                     VStack(alignment: .leading, spacing: 12) {
+                                        // FIX: Use simple row to avoid compiler freeze
                                         ForEach(latestGrammarIssuesOnly) { issue in
-                                            VStack(alignment: .leading, spacing: 8) {
-                                                Text(issue.message)
-                                                    .lineLimit(nil)
-                                                    .fixedSize(horizontal: false, vertical: true)
-                                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                                
-                                                if isActionableGrammarIssue(issue.message) {
-                                                    HStack(spacing: 8) {
-                                                        Spacer()
-                                                        
-                                                        // 🎯 MARK AS ATTENTION (toggle)
-                                                        Button {
-                                                            viewModel.toggleAttentionSelection(for: issue)
-                                                        } label: {
-                                                            Label(
-                                                                viewModel.isAttentionSelected(issue) ? "Watched" : "Watch",
-                                                                systemImage: viewModel.isAttentionSelected(issue) ? "star.fill" : "star"
-                                                            )
-                                                        }
-                                                        .buttonStyle(.bordered)
-                                                        .tint(viewModel.isAttentionSelected(issue) ? .indigo : nil)
-                                                        .controlSize(.small)
-                                                        
-                                                        // 🙈 IGNORE BUTTON
-                                                        Button {
-                                                            viewModel.toggleIgnoreSelection(for: issue)
-                                                        } label: {
-                                                            Label(
-                                                                viewModel.isIgnored(issue) ? "Ignored" : "Ignore",
-                                                                systemImage: viewModel.isIgnored(issue) ? "eye.slash.fill" : "eye.slash"
-                                                            )
-                                                        }
-                                                        .buttonStyle(.bordered)
-                                                        .controlSize(.small)
-                                                        .disabled(viewModel.isAttentionSelected(issue))
-                                                    }
-                                                }
-                                            }
+                                            GrammarIssueRow(
+                                                issue: issue,
+                                                isActionable: isActionableGrammarIssue(issue.message),
+                                                onToggleWatch: { viewModel.toggleAttentionSelection(for: issue) },
+                                                onToggleIgnore: { viewModel.toggleIgnoreSelection(for: issue) },
+                                                isWatched: viewModel.isAttentionSelected(issue),
+                                                isIgnored: viewModel.isIgnored(issue)
+                                            )
                                         }
                                     }
                                 }
                             }
+                            
                             
                         }
                         .padding(.vertical, 4)
@@ -319,20 +283,19 @@ struct ContentView: View {
             Text("Are you sure you want to delete all history? This cannot be undone.")
         }
     }
-    
 }
 
+// MARK: - 下方所有代码完全不变
 struct TranscriptScrollView: View {
     let text: String
     
     var body: some View {
         ScrollView {
-            // Use a basic Text view to test visibility first
             Text(text)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
         }
-        .frame(minHeight: 80, maxHeight: 260) // 👈 Enforce minimum height
+        .frame(minHeight: 80, maxHeight: 260)
         .background(.gray.opacity(0.15))
         .cornerRadius(8)
     }
@@ -341,25 +304,13 @@ struct TranscriptScrollView: View {
 private struct AttentionSummaryView: View {
     @ObservedObject var viewModel: SpeechPracticeViewModel
     @Environment(\.dismiss) private var dismiss
-    // 👇 保存你勾选的项目
     @State private var selectedItems: Set<String> = []
-    // editor
     @State private var editingItem: IssuePreferenceItem?
     @State private var editedTitle: String = ""
     
     var body: some View {
         NavigationStack {
             List {
-//                Section("Attention Mode") {
-//                    Toggle(
-//                        "Track only selected attentions after each recording",
-//                        isOn: Binding(
-//                            get: { viewModel.isAttentionModeEnabled },
-//                            set: { viewModel.setAttentionModeEnabled($0) }
-//                        )
-//                    )
-//                }
-
                 Section("Selected Attentions") {
                     if viewModel.selectedAttentionStatistics.isEmpty {
                         Text("No attentions selected yet. Turn on an issue from the latest analysis to memorize it.")
@@ -368,7 +319,6 @@ private struct AttentionSummaryView: View {
                         ForEach(viewModel.selectedAttentionStatistics) { statistic in
                             HStack(alignment: .center, spacing: 12) {
                                 
-                                // ✅ 可点击的勾选框
                                 Button {
                                     if selectedItems.contains(statistic.issueKey) {
                                         selectedItems.remove(statistic.issueKey)
@@ -413,7 +363,6 @@ private struct AttentionSummaryView: View {
                         ForEach(viewModel.selectedIgnoredIssues) { item in
                             HStack(alignment: .center, spacing: 12) {
                                 
-                                // ✅ SAME CHECKBOX as Attention section
                                 Button {
                                     if selectedItems.contains(item.issueKey) {
                                         selectedItems.remove(item.issueKey)
@@ -426,7 +375,6 @@ private struct AttentionSummaryView: View {
                                 }
                                 .buttonStyle(.plain)
 
-
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(item.title)
                                     Text("Ignored in future analysis until turned off")
@@ -434,7 +382,7 @@ private struct AttentionSummaryView: View {
                                         .foregroundStyle(.secondary)
                                 }
                                 Spacer()
-                                // ✅ ADDED EDIT BUTTON HERE
+                                
                                 Button {
                                     editedTitle = item.title
                                     editingItem = item
@@ -456,51 +404,45 @@ private struct AttentionSummaryView: View {
                     }
                 }
 
-                // MARK: - 工具栏按钮
-                // 1. 删除选中的关注项（正常工作）
                 ToolbarItem(placement: .destructiveAction) {
                     Button("Clear Selected") {
                         for key in selectedItems {
-                            // DELETE FROM WATCHED LIST
                             viewModel.removeAttention(issueKey: key)
-                            
-                            // DELETE FROM IGNORED LIST (THIS IS THE MISSING PIECE)
                             viewModel.removeIgnoredIssue(issueKey: key)
                         }
                         selectedItems.removeAll()
                     }
                     .disabled(selectedItems.isEmpty)
                 }
-
-                //
             }
             .sheet(item: $editingItem) { item in
-                            NavigationStack {
-                                VStack(spacing: 20) {
-                                    TextField("Edit your item", text: $editedTitle)
-                                        .textFieldStyle(.roundedBorder)
-                                        .padding(.horizontal, 16)
-                                        .padding(.top, 20)
-                                    Spacer()
-                                }
-                                .navigationTitle("Edit Item")
-                                .toolbar {
-                                    ToolbarItem(placement: .cancellationAction) {
-                                        Button("Cancel") { editingItem = nil }
-                                    }
-                                    ToolbarItem(placement: .confirmationAction) {
-                                        Button("Save") {
-                                            saveEdit(item: item, newTitle: editedTitle)
-                                            editingItem = nil
-                                        }
-                                    }
-                                }
-                            }
-                            .frame(width: 400, height: 100)
+                NavigationStack {
+                    VStack(spacing: 20) {
+                        TextField("Edit your item", text: $editedTitle)
+                            .textFieldStyle(.roundedBorder)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 20)
+                        Spacer()
+                    }
+                    .navigationTitle("Edit Item")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") { editingItem = nil }
                         }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Save") {
+                                saveEdit(item: item, newTitle: editedTitle)
+                                editingItem = nil
+                            }
+                        }
+                    }
+                }
+                .frame(width: 400, height: 100)
+            }
         }
         .frame(width: 450, height: 250)
     }
+    
     private func saveEdit(item: IssuePreferenceItem, newTitle: String) {
         viewModel.updateAttentionOrIgnoreItem(
             oldKey: item.issueKey,
@@ -521,7 +463,6 @@ private struct HistoryRecordDetailView: View {
                     Text("Created: \(record.createdAt.formatted(date: .abbreviated, time: .shortened))")
                     Text("Duration: \(record.duration, specifier: "%.1f") seconds")
                     Text("Grammar issues: \(record.issues.count)")
- //                   Text("Attention Mode: \(record.attentionModeEnabled ? "On" : "Off")")
                 }
 
                 Section("Transcript") {
@@ -595,7 +536,6 @@ private struct HistoryRecordDetailView: View {
     }
 }
 
-// NATIVE MAC TEXT VIEW — RIGHT-CLICK COPY PERFECT
 struct NativeMacTextView: NSViewRepresentable {
     let text: String
     
@@ -614,9 +554,6 @@ struct NativeMacTextView: NSViewRepresentable {
     }
 }
 
-
-// Native Mac Text View with REAL-TIME GRAMMAR & SPELLING CHECK
-// ✅ PERFECT, NO ERRORS, MAC NATIVE TEXT VIEW
 struct NativeTextView: NSViewRepresentable {
     let text: String
     
@@ -626,15 +563,11 @@ struct NativeTextView: NSViewRepresentable {
         textView.isEditable = false
         textView.isSelectable = true
         
-        // ✅ Enable spelling & grammar (CORRECT MAC CODE)
         textView.isContinuousSpellCheckingEnabled = true
         textView.isGrammarCheckingEnabled = true
         
-        // Style
         textView.drawsBackground = true
-        textView.backgroundColor = NSColor(
-            red: 0.9, green: 0.9, blue: 0.9, alpha: 0.1
-        )
+        textView.backgroundColor = NSColor(red: 0.9, green: 0.9, blue: 0.9, alpha: 0.1)
         textView.font = .systemFont(ofSize: 14)
         textView.textContainerInset = NSSize(width: 8, height: 8)
         textView.wantsLayer = true
@@ -647,10 +580,50 @@ struct NativeTextView: NSViewRepresentable {
         if nsView.string != text {
             nsView.string = text
         }
-        
     }
+}
+
+// MARK: - FIX Compiler Error
+private struct GrammarIssueRow: View {
+    let issue: GrammarIssue
+    let isActionable: Bool
+    let onToggleWatch: () -> Void
+    let onToggleIgnore: () -> Void
+    let isWatched: Bool
+    let isIgnored: Bool
     
-    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(issue.message)
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            
+            // NO MORE highScoreAlternatives
+            
+            if isActionable {
+                HStack(spacing: 8) {
+                    Spacer()
+                    
+                    Button(action: onToggleWatch) {
+                        Label(isWatched ? "Watched" : "Watch",
+                              systemImage: isWatched ? "star.fill" : "star")
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(isWatched ? .indigo : nil)
+                    .controlSize(.small)
+                    
+                    Button(action: onToggleIgnore) {
+                        Label(isIgnored ? "Ignored" : "Ignore",
+                              systemImage: isIgnored ? "eye.slash.fill" : "eye.slash")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(isWatched)
+                }
+            }
+        }
+    }
 }
 
 #Preview {
