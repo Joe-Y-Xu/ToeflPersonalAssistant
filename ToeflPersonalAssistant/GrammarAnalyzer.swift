@@ -112,7 +112,6 @@ final class GrammarAnalyzer {
             - Keep original meaning.
             - Use natural, academic TOEFL English.
             - issues must be all real errors — NO separators, NO fake items.
-            - isActionable = true for all real issues.
             - DO NOT include any text outside the JSON.
 
             Transcript: \(trimmed)
@@ -140,9 +139,9 @@ final class GrammarAnalyzer {
             }
 
             Rules:
-            - revised_text = complete full speech
-            - Each issue must be real and actionable
-            - NO non-actionable lines like dividers or notes
+            - Correct all tense, article, preposition, structure errors.
+            - Use formal academic English.
+            - Keep original ideas.
             - DO NOT output anything outside the JSON
 
             Transcript: \(trimmed)
