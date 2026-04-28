@@ -82,14 +82,16 @@ final class GrammarAnalyzer {
             suffixPrompt = """
             IMPORTANT: The following word rules **HAVE HIGHEST PRIORITY** and override all other rules.
             YOU MUST FOLLOW THESE RULES:
+            ******************************************************
             \(wordRules)
+            ******************************************************
             """
         }
 
         switch transcribeMode {
         case .fast:
             prompt = """
-                        Output ONLY a JSON object in THIS FORMAT:
+                        You MUST respond ONLY with valid JSON. Do NOT add any introductory text, explanations, or comments before or after the JSON. The response must start with { and end with }.
                         {
                           "revised_text": "FULL TOEFL 6.0 revised speech here",
                           "issues": [
@@ -109,7 +111,7 @@ final class GrammarAnalyzer {
                         - **Redundancy & awkward phrasing**: Repetitive words, redundant clauses, and unnatural word order.
                         - **Clarity & precision**: Vague expressions, overly simple sentence structure, and lack of logical flow.
                         - **Academic tone**: Informal language, contractions, and non-idiomatic phrasing that would lower a TOEFL score.
-                        - ** improvement entry**: provide 3 or more distinct high-scoring TOEFL-level alternative phrases/expressions.
+                        - ** improvement entry**: provide 3  distinct high-scoring TOEFL-level alternative phrases/expressions.
                         - **high_score_alternatives** : Ensure alternative phrases are natural, academic, and suitable for TOEFL speaking.
                         - **Responses**: DO NOT include any text outside the JSON.
 
