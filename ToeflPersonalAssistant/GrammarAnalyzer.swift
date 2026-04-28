@@ -114,7 +114,7 @@ final class GrammarAnalyzer {
             }
 
             Rules:
-            - score: Numeric rating strictly 0–6, following official 2026 TOEFL iBT Speaking rubric.
+            - score: Numeric rating strictly 0–6, graded harshly and realistically per official 2026 TOEFL iBT Speaking rubric. Apply heavy point deductions for simple sentence structures, repetitive phrasing, weak logical connection, unclear content, awkward collocations, inconsistent tenses, limited vocabulary, and underdeveloped ideas. No inflated, lenient, or overgenerous scores.
             - revised_text: Output the full revised speech, retain all original content and logic, fix errors only.
             - Check and correct: grammar, tense, article, preposition, conjunction, word order, redundancy, unclear expression.
             - Maintain formal academic TOEFL tone; remove informal wording and non-idiomatic expressions.
