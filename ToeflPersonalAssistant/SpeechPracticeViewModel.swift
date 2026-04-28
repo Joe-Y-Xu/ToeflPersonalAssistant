@@ -170,6 +170,8 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
     @Published private(set) var ignoredIssueItems: [IssuePreferenceItem] = []
     @Published var transcribeMode: TranscribeMode = .fast
     
+    @Published var speakingScore: Int = 0
+    
     let maxDuration: TimeInterval = 45
 
     var selectedAttentionStatistics: [AttentionStatistic] {
@@ -355,7 +357,16 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
                 let transcript = try await transcribeAudioFile(at: fileURL)
                 
                 // ✅ 1. Run AI TOEFL Grammar Check (async + await)
-                let issues = await analyzeGrammar(in: transcript)
+
+                let result = await GrammarAnalyzer.shared.analyzeTOEFLGrammar(
+                    text: transcript,
+                    transcribeMode: transcribeMode,
+                    attentionStatistics: attentionStatistics,
+                    selectedAttentionKeys: selectedAttentionKeys,
+                    ignoredIssueItems: ignoredIssueItems
+                )
+                let issues = result.issues
+                let score = result.score
                 
                 // ✅ 2. Filter ignored issues
                 let filteredIssues = issues.filter {
@@ -375,6 +386,7 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
                     self.latestTranscript = transcript
                     self.latestIssues = filteredIssues
                     self.latestAttentionOutcomes = attentionOutcomes
+                    self.speakingScore = score
                 }
 
                 // ✅ 5. Update attention stats
@@ -850,13 +862,15 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
 // Large language model
     // ✅ REPLACES OLD FUNCTION — CLEAN & SIMPLE
     private func analyzeGrammar(in text: String) async -> [GrammarIssue] {
-        await GrammarAnalyzer.shared.analyzeTOEFLGrammar(
-                text: text, 
-                transcribeMode: transcribeMode,
-                attentionStatistics: attentionStatistics,
-                selectedAttentionKeys: selectedAttentionKeys,
-                ignoredIssueItems: ignoredIssueItems
+        let result = await GrammarAnalyzer.shared.analyzeTOEFLGrammar(
+            text: text,
+            transcribeMode: transcribeMode,
+            attentionStatistics: attentionStatistics,
+            selectedAttentionKeys: selectedAttentionKeys,
+            ignoredIssueItems: ignoredIssueItems
         )
+        // ✅ Extract just the issues array from the tuple
+        return result.issues
     }
     
     private func splitIntoSentences(_ text: String) -> [String] {

@@ -9,6 +9,12 @@ import Foundation
 //import AImModelClients
 
 
+private struct ParsedFeedback {
+    let correctedTranscript: String
+    let grammarErrors: [String]
+    let score: Int
+}
+
 struct TOEFLFeedback: Codable {
     let revisedSentence: String
     let grammarErrors: [GrammarError]
@@ -36,12 +42,13 @@ final class GrammarAnalyzer {
         attentionStatistics: [AttentionStatistic],
             selectedAttentionKeys: Set<String>,
             ignoredIssueItems: [IssuePreferenceItem]
-    ) async -> [GrammarIssue] {
+    ) async -> (issues: [GrammarIssue], score: Int) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            return [
-                GrammarIssue(id: UUID(), message: "No speech detected", snippet: "", kind: .system)
-            ]
+            return (
+                issues: [GrammarIssue(id: UUID(), message: "No speech detected", snippet: "", kind: .system)],
+                score: 0
+            )
         }
         
         // ==============================================
@@ -91,32 +98,31 @@ final class GrammarAnalyzer {
         switch transcribeMode {
         case .fast:
             prompt = """
-                        You MUST respond ONLY with valid JSON. Do NOT add any introductory text, explanations, or comments before or after the JSON. The response must start with { and end with }.
-                        {
-                          "revised_text": "FULL TOEFL 6.0 revised speech here",
-                          "issues": [
-                            {
-                              "message": "Describe the grammar/usage issue clearly",
-                              "improvement": "Explain exactly how to fix it",
-                              "high_score_alternatives": ["phrase1","phrase2","phrase3"],
-                              "type": "grammar|spelling|punctuation|style|capitalization|wording",
-                              "isActionable": true
-                            }
-                          ]
-                        }
+            You MUST respond ONLY with valid JSON. Do NOT add any introductory text, explanations, or comments before or after the JSON. The response must start with { and end with }.
+            {
+              "revised_text": "Full corrected TOEFL speaking transcript, original meaning fully preserved",
+              "score": 0,
+              "issues": [
+                {
+                  "message": "Clear description of grammar / wording / style issue",
+                  "improvement": "Concrete correction method",
+                  "high_score_alternatives": ["phrase1","phrase2","phrase3"],
+                  "type": "grammar|spelling|punctuation|style|capitalization|wording",
+                  "isActionable": true
+                }
+              ]
+            }
 
-                        Rules:
-                        - **Revised Version**: revised_text must be the COMPLETE corrected speech, Keep original meaning.
-                        - **Grammar errors**: Subject-verb agreement, tense consistency, article/preposition misuse, illegal conjunction combinations.
-                        - **Redundancy & awkward phrasing**: Repetitive words, redundant clauses, and unnatural word order.
-                        - **Clarity & precision**: Vague expressions, overly simple sentence structure, and lack of logical flow.
-                        - **Academic tone**: Informal language, contractions, and non-idiomatic phrasing that would lower a TOEFL score.
-                        - ** improvement entry**: provide 3  distinct high-scoring TOEFL-level alternative phrases/expressions.
-                        - **high_score_alternatives** : Ensure alternative phrases are natural, academic, and suitable for TOEFL speaking.
-                        - **Responses**: DO NOT include any text outside the JSON.
+            Rules:
+            - score: Numeric rating strictly 0–6, following official 2026 TOEFL iBT Speaking rubric.
+            - revised_text: Output the full revised speech, retain all original content and logic, fix errors only.
+            - Check and correct: grammar, tense, article, preposition, conjunction, word order, redundancy, unclear expression.
+            - Maintain formal academic TOEFL tone; remove informal wording and non-idiomatic expressions.
+            - Each issue must provide exactly 3 unique, natural, TOEFL-appropriate high-score alternative phrases.
+            - Output ONLY pure JSON, no extra characters, no markdown, no line breaks outside JSON structure.
 
-                        Transcript: \(trimmed)
-                        """
+            Transcript: \(trimmed)
+            """
             aiTemperature = 0.1
 
         case .balanced:
@@ -186,9 +192,12 @@ final class GrammarAnalyzer {
         do {
             let feedback = try await chatClient.complete(prompt: prompt, temperature: aiTemperature)
             let parsed = parseFeedback(feedback)
+            
             let revisedText = parsed.correctedTranscript
             let errorLines = parsed.grammarErrors
-
+            let score = parsed.score
+            
+            print("🎯 LOG 1: 解析后的分数 = \(score)")
             var issues: [GrammarIssue] = []
             
             if !revisedText.isEmpty {
@@ -199,7 +208,16 @@ final class GrammarAnalyzer {
                     kind: .revisedVersion
                 ))
             }
+            
+//            issues.append(GrammarIssue(
+//                id: UUID(),
+//                message: "TOEFL 2026 Speaking Score: \(score)/6",
+//                snippet: "",
+//                kind: .system
+//            ))
 
+            print("🎯 LOG 2: 准备添加分数到界面，分数 = \(score)")
+            
             for line in errorLines {
                 issues.append(GrammarIssue(
                     id: UUID(),
@@ -208,13 +226,13 @@ final class GrammarAnalyzer {
                     kind: .grammarIssue
                 ))
             }
-
-            return issues
-
+            print("🎯 LOG 3: 最终返回给界面的问题数量 = \(issues.count)")
+            return (issues: issues, score: parsed.score)
         } catch {
-            return [
-                GrammarIssue(id: UUID(), message: "Server error", snippet: "", kind: .system)
-            ]
+            return (
+                issues: [GrammarIssue(id: UUID(), message: "No speech detected", snippet: "", kind: .system)],
+                score: 0
+            )
         }
     }
 
@@ -265,7 +283,8 @@ final class GrammarAnalyzer {
 
         return ParsedFeedback(
             correctedTranscript: correctedTranscript,
-            grammarErrors: grammarErrors
+            grammarErrors: grammarErrors,
+            score: 0
         )
     }
 
@@ -277,6 +296,7 @@ final class GrammarAnalyzer {
             // 匹配你 AI 返回的真实结构
             struct JsonResponse: Codable {
                 let revised_text: String
+                let score: Int
                 let issues: [Issue]
                 
                 struct Issue: Codable {
@@ -317,7 +337,8 @@ final class GrammarAnalyzer {
             // 返回解析好的内容 → 你的界面马上显示
             return ParsedFeedback(
                 correctedTranscript: response.revised_text,
-                grammarErrors: errorLines
+                grammarErrors: errorLines,
+                score: response.score
             )
             
         } catch {
@@ -351,7 +372,4 @@ final class GrammarAnalyzer {
     }
 }
 
-private struct ParsedFeedback {
-    let correctedTranscript: String
-    let grammarErrors: [String]
-}
+

@@ -135,6 +135,13 @@ struct ContentView: View {
                                         }
                                         .buttonStyle(.bordered)
                                         
+                                        if viewModel.speakingScore > 0 {
+                                            Text("Score: \(viewModel.speakingScore)/6")
+                                                .font(.headline)
+                                                .bold()
+                                                .foregroundColor(.blue)
+                                        }
+                                        
                                         TranscriptScrollView(text: viewModel.latestTranscript)
                                     }
                                 }
