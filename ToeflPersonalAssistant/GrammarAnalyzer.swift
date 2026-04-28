@@ -98,28 +98,28 @@ final class GrammarAnalyzer {
         switch transcribeMode {
         case .fast:
             prompt = """
-            You MUST respond ONLY with valid JSON. Do NOT add any introductory text, explanations, or comments before or after the JSON. The response must start with { and end with }.
+            You MUST respond ONLY with valid JSON. Do NOT add introductory text, explanations, comments, markdown or extra symbols. Response must start with { and end with }.
             {
-              "revised_text": "Full corrected TOEFL speaking transcript, original meaning fully preserved",
+              "revised_text": "Fully corrected TOEFL speaking transcript with original meaning intact",
               "score": 0,
               "issues": [
                 {
-                  "message": "Clear description of grammar / wording / style issue",
-                  "improvement": "Concrete correction method",
+                  "message": "Concise description of grammar / wording / stylistic flaw",
+                  "improvement": "Direct, actionable correction guidance",
                   "high_score_alternatives": ["phrase1","phrase2","phrase3"],
-                  "type": "grammar|spelling|punctuation|style|capitalization|wording",
+                  "type": "grammar|spelling|punctuation|style|capitalization|wording|coherence",
                   "isActionable": true
                 }
               ]
             }
 
             Rules:
-            - score: Numeric rating strictly 0–6, graded harshly and realistically per official 2026 TOEFL iBT Speaking rubric. Apply heavy point deductions for simple sentence structures, repetitive phrasing, weak logical connection, unclear content, awkward collocations, inconsistent tenses, limited vocabulary, and underdeveloped ideas. No inflated, lenient, or overgenerous scores.
-            - revised_text: Output the full revised speech, retain all original content and logic, fix errors only.
-            - Check and correct: grammar, tense, article, preposition, conjunction, word order, redundancy, unclear expression.
-            - Maintain formal academic TOEFL tone; remove informal wording and non-idiomatic expressions.
-            - Each issue must provide exactly 3 unique, natural, TOEFL-appropriate high-score alternative phrases.
-            - Output ONLY pure JSON, no extra characters, no markdown, no line breaks outside JSON structure.
+            - Score strictly 0–6 per official 2026 TOEFL iBT Speaking rubric with harsh, realistic grading. Heavily deduct points for simplistic syntax, repetitive language, poor coherence, vague logic, awkward collocations, tense errors and basic vocabulary. Never assign inflated or lenient scores.
+            - revised_text: Fully correct errors while preserving original context, core ideas and key details; only fix mistakes without altering core meaning.
+            - Detect all errors: grammar, tense, articles, prepositions, conjunctions, word order, redundancy and ambiguous expression.
+            - Enforce formal academic TOEFL tone; eliminate informal language and unnatural phrasing.
+            - Every issue must include exactly three distinct, natural, high-level TOEFL alternative phrases.
+            - Return strictly valid compact JSON only; no extra line breaks, whitespace clutter or external content.
 
             Transcript: \(trimmed)
             """
