@@ -4,6 +4,7 @@ build/
 DerivedData/
 *.build
 *.xcarchive
+.derived*
 
 # Swift Package Manager 缓存与产物
 .build/
@@ -14,9 +15,6 @@ Package.resolved
 **/*.xcuserdatad/
 **/xcdebugger/
 **/*.xcuserdata/
-
-# 忽略缓存
-.DS_Store
 *.log
 
 # Python
