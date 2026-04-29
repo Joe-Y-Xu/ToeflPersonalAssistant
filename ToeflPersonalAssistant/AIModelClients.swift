@@ -129,7 +129,8 @@ protocol ChatCompletionProviding {
 
 struct LocalChatCompletionClient: ChatCompletionProviding {
     var endpoint: URL = URL(string: "http://127.0.0.1:1234/v1/chat/completions")!
-    var model: String = "lmstudio-community/Meta-Llama-3-8B-Instruct-GGUF"
+ //   var model: String = "lmstudio-community/Meta-Llama-3-8B-Instruct-GGUF"
+    var model: String = "GJ-droid-dev/Mistral-7B-Instruct-v0.3-Q4_K_M-GGUF"
 
     func complete(prompt: String, temperature: Double) async throws -> String {
         var request = URLRequest(url: endpoint)

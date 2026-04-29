@@ -123,8 +123,20 @@ struct ContentView: View {
                             }
 
                             if !viewModel.latestTranscript.isEmpty {
-                                GroupBox("Latest Transcript") {
-                                    VStack(alignment: .leading, spacing: 12) {
+                                GroupBox {
+                                    // 只保留文本框
+                                    TranscriptScrollView(text: viewModel.latestTranscript)
+                                } label: {
+                                    // ✅ 标题 + 分数 + 按钮 全部在同一行！
+                                    HStack(spacing: 8) {
+                                        Text("Latest Transcript")
+                                        
+                                        Text("Score: \(viewModel.speakingScore)/6")
+                                            .font(.headline)
+                                            .bold()
+                                            .foregroundColor(.blue)
+                                        Spacer()
+                                        
                                         Button {
                                             viewModel.toggleLatestRecordingPlayback()
                                         } label: {
@@ -134,15 +146,6 @@ struct ContentView: View {
                                             )
                                         }
                                         .buttonStyle(.bordered)
-                                        
-                                        if viewModel.speakingScore > 0 {
-                                            Text("Score: \(viewModel.speakingScore)/6")
-                                                .font(.headline)
-                                                .bold()
-                                                .foregroundColor(.blue)
-                                        }
-                                        
-                                        TranscriptScrollView(text: viewModel.latestTranscript)
                                     }
                                 }
                             }
@@ -174,8 +177,14 @@ struct ContentView: View {
                             }
                             
                             if let latestRevisedText, !latestRevisedText.isEmpty {
-                                GroupBox("TOEFL 6.0 Revised Version") {
+                                GroupBox {
+                                    // ✅ 用同一个 TranscriptScrollView → 样式立刻统一
                                     TranscriptScrollView(text: latestRevisedText)
+                                } label: {
+                                    HStack {
+                                        Text("TOEFL 6.0 Revised Version")
+                                        Spacer()
+                                    }
                                 }
                             }
 
@@ -305,6 +314,7 @@ struct TranscriptScrollView: View {
         .frame(minHeight: 80, maxHeight: 260)
         .background(.gray.opacity(0.15))
         .cornerRadius(8)
+        .scrollIndicators(.never) 
     }
 }
 
@@ -484,7 +494,12 @@ private struct HistoryRecordDetailView: View {
                         }
                         .buttonStyle(.bordered)
                         .disabled(!viewModel.isPlaybackAvailable(for: record))
-
+                        
+                        Text("Score: \(record.score)/6")
+                                .font(.headline)
+                                .bold()
+                                .foregroundColor(.blue)
+                        
                         Text(record.transcript)
                     }
                 }

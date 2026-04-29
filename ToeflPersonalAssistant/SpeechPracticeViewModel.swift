@@ -103,6 +103,7 @@ struct SpeechRecord: Codable, Identifiable, Hashable {
     let issues: [GrammarIssue]
     let attentionModeEnabled: Bool
     let attentionOutcomes: [AttentionOutcome]
+    let score: Int
 
     init(
         id: UUID = UUID(),
@@ -112,7 +113,8 @@ struct SpeechRecord: Codable, Identifiable, Hashable {
         transcript: String,
         issues: [GrammarIssue],
         attentionModeEnabled: Bool = false,
-        attentionOutcomes: [AttentionOutcome] = []
+        attentionOutcomes: [AttentionOutcome] = [],
+        score : Int = 0
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -122,6 +124,7 @@ struct SpeechRecord: Codable, Identifiable, Hashable {
         self.issues = issues
         self.attentionModeEnabled = attentionModeEnabled
         self.attentionOutcomes = attentionOutcomes
+        self.score = score
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -133,6 +136,7 @@ struct SpeechRecord: Codable, Identifiable, Hashable {
         case issues
         case attentionModeEnabled
         case attentionOutcomes
+        case score
     }
 
     init(from decoder: Decoder) throws {
@@ -145,6 +149,7 @@ struct SpeechRecord: Codable, Identifiable, Hashable {
         issues = try container.decode([GrammarIssue].self, forKey: .issues)
         attentionModeEnabled = try container.decodeIfPresent(Bool.self, forKey: .attentionModeEnabled) ?? false
         attentionOutcomes = try container.decodeIfPresent([AttentionOutcome].self, forKey: .attentionOutcomes) ?? []
+        score = try container.decodeIfPresent(Int.self, forKey: .score) ?? 0
     }
 }
 
@@ -407,7 +412,8 @@ final class SpeechPracticeViewModel: NSObject, ObservableObject {
                     transcript: transcript,
                     issues: filteredIssues,
                     attentionModeEnabled: isAttentionModeEnabled,
-                    attentionOutcomes: attentionOutcomes
+                    attentionOutcomes: attentionOutcomes,
+                    score: score
                 )
                 
                 await MainActor.run {

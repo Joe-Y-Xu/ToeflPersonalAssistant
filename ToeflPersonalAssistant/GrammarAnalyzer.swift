@@ -98,31 +98,33 @@ final class GrammarAnalyzer {
         switch transcribeMode {
         case .fast:
             prompt = """
-            You MUST respond ONLY with valid JSON. Do NOT add introductory text, explanations, comments, markdown or extra symbols. Response must start with { and end with }.
-            {
-              "revised_text": "Fully corrected TOEFL speaking transcript with original meaning intact",
-              "score": 0,
-              "issues": [
-                {
-                  "message": "Concise description of grammar / wording / stylistic flaw",
-                  "improvement": "Direct, actionable correction guidance",
-                  "high_score_alternatives": ["phrase1","phrase2","phrase3"],
-                  "type": "grammar|spelling|punctuation|style|capitalization|wording|coherence",
-                  "isActionable": true
-                }
-              ]
-            }
+                        You MUST respond ONLY with valid JSON. Do NOT add introductory text, explanations, comments, markdown or extra symbols. Response must start with { and end with }.
+                        {
+                          "revised_text": "Fully corrected TOEFL speaking transcript with original meaning intact",
+                          "score": 0,
+                          "issues": [
+                            {
+                              "message": "Concise description of grammar / wording / stylistic flaw",
+                              "improvement": "Direct, actionable guidance, and a corrected version for this error",
+                              "high_score_alternatives": ["phrase1","phrase2","phrase3"],
+                              "type": "grammar|spelling|punctuation|style|capitalization|wording|coherence",
+                              "isActionable": true
+                            }
+                          ]
+                        }
 
-            Rules:
-            - Score strictly 0–6 per official 2026 TOEFL iBT Speaking rubric with harsh, realistic grading. Heavily deduct points for simplistic syntax, repetitive language, poor coherence, vague logic, awkward collocations, tense errors and basic vocabulary. Never assign inflated or lenient scores.
-            - revised_text: Fully correct errors while preserving original context, core ideas and key details; only fix mistakes without altering core meaning.
-            - Detect all errors: grammar, tense, articles, prepositions, conjunctions, word order, redundancy and ambiguous expression.
-            - Enforce formal academic TOEFL tone; eliminate informal language and unnatural phrasing.
-            - Every issue must include exactly three distinct, natural, high-level TOEFL alternative phrases.
-            - Return strictly valid compact JSON only; no extra line breaks, whitespace clutter or external content.
+                        Rules:
+                        - Score strictly 0–6 per official 2026 TOEFL iBT Speaking rubric with harsh, realistic grading. Heavily deduct points for simplistic syntax, repetitive language, poor coherence, vague logic, awkward collocations, tense errors and basic vocabulary. Never assign inflated or lenient scores.
+                        - revised_text: Fully correct errors while preserving original context, core ideas and key details; only fix mistakes without altering core meaning.
+                        - Detect all errors: grammar, tense, articles, prepositions, conjunctions, word order, redundancy and ambiguous expression.
+                        - Enforce formal academic TOEFL tone; eliminate informal language and unnatural phrasing.
+                        - Each issue entry must be fully unique; never repeat identical message text, improvement instructions or alternative phrases across different issues.
+                        - high_score_alternatives: provide 3 original, distinct, high-level TOEFL phrases tailored to that specific flaw; do NOT copy full sentences from the user’s transcript, do NOT reuse identical alternative lists for multiple issues.
+                        - Every issue must include exactly three distinct, natural, high-level TOEFL alternative phrases.
+                        - Return strictly valid compact JSON only; no extra line breaks, whitespace clutter or external content.
 
-            Transcript: \(trimmed)
-            """
+                        Transcript: \(trimmed)
+                        """
             aiTemperature = 0.1
 
         case .balanced:
