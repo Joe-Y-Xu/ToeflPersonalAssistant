@@ -26,6 +26,33 @@ struct GrammarError: Codable, Identifiable {
     let type: String
 }
 
+// ✅ ONLY STRUCTS NEEDED TO GET content
+struct FullAIResponse: Codable {
+    let choices: [Choice]
+}
+
+struct Choice: Codable {
+    let message: Message
+}
+
+struct Message: Codable {
+    let content: String
+}
+
+// ✅ TOEFL JSON STRUCT (unchanged)
+struct TOEFLResponse: Codable {
+    let revised_text: String
+    let score: Int
+    let issues: [Issue]
+    
+    struct Issue: Codable {
+        let message: String
+        let improvement: String
+        let high_score_alternatives: [String]?
+        let type: String
+        let isActionable: Bool?
+    }
+}
 
 final class GrammarAnalyzer {
     static let shared = GrammarAnalyzer()
@@ -98,14 +125,24 @@ final class GrammarAnalyzer {
         switch transcribeMode {
         case .fast:
             prompt = """
-                        You MUST respond ONLY with valid JSON. Do NOT add introductory text, explanations, comments, markdown or extra symbols. Response must start with { and end with }.
+                        You are an official 2026 TOEFL iBT Speaking Examiner.
+                        Evaluate the transcript strictly using the official 0–6 scoring rubric across three dimensions:
+                        1. Delivery: fluency, pacing, pronunciation clarity
+                        2. Language Use: grammar accuracy, tense consistency, articles, prepositions, conjunctions, collocation, sentence structure variety
+                        3. Topic Development: logical coherence, clear connections, no redundancy or vagueness
+
+                        You MUST return ONLY valid JSON.
+                        Do NOT add explanations, markdown, brackets, notes, or extra symbols outside the JSON.
+                        Response MUST start with { and end with }.
+
+                        JSON FORMAT:
                         {
-                          "revised_text": "Fully corrected TOEFL speaking transcript with original meaning intact",
+                          "revised_text": "Fully corrected TOEFL-level transcript, preserve original meaning and ideas",
                           "score": 0,
                           "issues": [
                             {
-                              "message": "Concise description of grammar / wording / stylistic flaw",
-                              "improvement": "Direct, actionable guidance, and a corrected version for this error",
+                              "message": "Clear, specific description of the actual error",
+                              "improvement": "Clear fix rule + include the EXACT original error phrase from the transcript + corrected example",
                               "high_score_alternatives": ["phrase1","phrase2","phrase3"],
                               "type": "grammar|spelling|punctuation|style|capitalization|wording|coherence",
                               "isActionable": true
@@ -113,15 +150,16 @@ final class GrammarAnalyzer {
                           ]
                         }
 
-                        Rules:
-                        - Score strictly 0–6 per official 2026 TOEFL iBT Speaking rubric with harsh, realistic grading. Heavily deduct points for simplistic syntax, repetitive language, poor coherence, vague logic, awkward collocations, tense errors and basic vocabulary. Never assign inflated or lenient scores.
-                        - revised_text: Fully correct errors while preserving original context, core ideas and key details; only fix mistakes without altering core meaning.
-                        - Detect all errors: grammar, tense, articles, prepositions, conjunctions, word order, redundancy and ambiguous expression.
-                        - Enforce formal academic TOEFL tone; eliminate informal language and unnatural phrasing.
-                        - Each issue entry must be fully unique; never repeat identical message text, improvement instructions or alternative phrases across different issues.
-                        - high_score_alternatives: provide 3 original, distinct, high-level TOEFL phrases tailored to that specific flaw; do NOT copy full sentences from the user’s transcript, do NOT reuse identical alternative lists for multiple issues.
-                        - Every issue must include exactly three distinct, natural, high-level TOEFL alternative phrases.
-                        - Return strictly valid compact JSON only; no extra line breaks, whitespace clutter or external content.
+                        STRICT RULES:
+                        - Score 0–6 strictly by TOEFL rubric. Grade harshly, no leniency.
+                        - Heavy deductions for: simple sentences, repetition, weak logic, awkward collocations, tense errors, article/preposition mistakes, and illegal conjunctions like even though/although...but.
+                        - Detect ALL errors: grammar, tense, articles, prepositions, word order, redundancy, vague phrasing, repetition, weak logic.
+                        - revised_text must fix all errors, use formal academic tone, keep original content unchanged.
+                        - Replace informal phrases with TOEFL-level academic expressions.
+                        - All issues must be unique. No repeated messages, improvements, or alternatives.
+                        - high_score_alternatives: EXACTLY 3 distinct, natural, high-level TOEFL phrases.
+                        - NEVER use placeholder text such as "Concise description of the exact flaw".
+                        - Output ONLY clean JSON.
 
                         Transcript: \(trimmed)
                         """
@@ -291,44 +329,25 @@ final class GrammarAnalyzer {
     }
 
     private func parseJSONFeedback(from raw: String) -> ParsedFeedback? {
-        // 直接解析你现在的 JSON 格式：revised_text + issues
         guard let data = raw.data(using: .utf8) else { return nil }
         
+        print("raw data: \(data)")
         do {
-            // 匹配你 AI 返回的真实结构
-            struct JsonResponse: Codable {
-                let revised_text: String
-                let score: Int
-                let issues: [Issue]
-                
-                struct Issue: Codable {
-                    let message: String
-                    let improvement: String
-                    let type: String
-                    let isActionable: Bool
-                    let high_score_alternatives: [String]? // 👈 新增
-                }
-            }
+            // FIRST TRY: DIRECTLY PARSE PURE TOEFL JSON ✅
+            let toefl = try JSONDecoder().decode(TOEFLResponse.self, from: data)
             
-            // 解码 JSON
-            let response = try JSONDecoder().decode(JsonResponse.self, from: data)
-            
-            let errorLines = response.issues.map { issue in
+            let errorLines = toefl.issues.map { issue in
                 var text = "\(issue.message)\nImprovement: \(issue.improvement)"
                 
                 if let alts = issue.high_score_alternatives, !alts.isEmpty {
-                    // Split any combined phrases (fixes your AI output)
                     let allPhrases = alts.flatMap {
                         $0.components(separatedBy: "; ")
                     }.map {
                         $0.trimmingCharacters(in: .whitespacesAndNewlines)
-                    }.filter {
-                        !$0.isEmpty
-                    }
+                    }.filter { !$0.isEmpty }
                     
-                    // Number ALL alternatives, no limit
-                    let numbered = allPhrases.enumerated().map { index, item in
-                        "\(index + 1). \(item)"
+                    let numbered = allPhrases.enumerated().map {
+                        "\($0.offset + 1). \($0.element)"
                     }.joined(separator: "\n")
                     
                     text += "\nHigh-score alternatives:\n\(numbered)"
@@ -336,19 +355,65 @@ final class GrammarAnalyzer {
                 return text
             }
             
-            // 返回解析好的内容 → 你的界面马上显示
+            print("✅ 1 try 最终解析结果：")
+            print("📝 1 try 修正后的文本：\(toefl.revised_text)")
+            print("🎯 1 try 得分：\(toefl.score)")
+            print("⚠️ 1 try 错误列表：\(errorLines)")
+            
             return ParsedFeedback(
-                correctedTranscript: response.revised_text,
+                correctedTranscript: toefl.revised_text,
                 grammarErrors: errorLines,
-                score: response.score
+                score: toefl.score
             )
             
         } catch {
-            print("🔴 JSON 解析失败: \(error.localizedDescription)")
-            return nil
+            // FALLBACK: IF IT'S WRAPPED, PARSE WRAPPER
+            do {
+                let aiResponse = try JSONDecoder().decode(FullAIResponse.self, from: data)
+                guard let content = aiResponse.choices.first?.message.content else {
+                    return nil
+                }
+                guard let contentData = content.data(using: .utf8) else {
+                    return nil
+                }
+                
+                let toefl = try JSONDecoder().decode(TOEFLResponse.self, from: contentData)
+                let errorLines = toefl.issues.map { issue in
+                    var text = "\(issue.message)\nImprovement: \(issue.improvement)"
+                    
+                    if let alts = issue.high_score_alternatives, !alts.isEmpty {
+                        let allPhrases = alts.flatMap {
+                            $0.components(separatedBy: "; ")
+                        }.map {
+                            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                        }.filter { !$0.isEmpty }
+                        
+                        let numbered = allPhrases.enumerated().map {
+                            "\($0.offset + 1). \($0.element)"
+                        }.joined(separator: "\n")
+                        
+                        text += "\nHigh-score alternatives:\n\(numbered)"
+                    }
+                    return text
+                }
+                
+                print("✅ 2 try 最终解析结果：")
+                print("📝 2 try 修正后的文本：\(toefl.revised_text)")
+                print("🎯 2 try 得分：\(toefl.score)")
+                print("⚠️  2 try 错误列表：\(errorLines)")
+
+                return ParsedFeedback(
+                    correctedTranscript: toefl.revised_text,
+                    grammarErrors: errorLines,
+                    score: toefl.score
+                )
+            } catch {
+                print("🔴 JSON 解析失败: \(error.localizedDescription)")
+                return nil
+            }
         }
     }
-
+    
     private func extractCodeFenceJSON(from text: String) -> String? {
         guard text.hasPrefix("```") else { return nil }
         let parts = text.components(separatedBy: "```")

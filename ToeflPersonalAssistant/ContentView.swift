@@ -221,16 +221,25 @@ struct ContentView: View {
                             ForEach(viewModel.history) { record in
                                 HStack(alignment: .top) {
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text("\(record.createdAt, format: .dateTime.month().day().year()) \(record.createdAt, format: .dateTime.hour().minute())")
-                                        Text("Duration: \(record.duration, specifier: "%.1f")s | Issues: \(record.issues.count)")
-                                            .font(.footnote)
-                                            .foregroundStyle(.secondary)
+                                        
+                                        HStack(spacing: 0) {
+                                            Text("Duration: \(record.duration, specifier: "%.1f")s | Issues: \(record.issues.count) | ")
+                                                .font(.footnote)
+                                                .foregroundStyle(.secondary)
+                                            
+                                            Text("Score: \(record.score)/6")
+                                                .font(.footnote)
+                                                .foregroundColor(.blue)
+                                        }
+                                        .lineLimit(1) // ✅ Force stay single line
+                                             
                                         if record.attentionModeEnabled {
                                             Text("Attention review: \(record.attentionOutcomes.filter { $0.status == .passed }.count) pass / \(record.attentionOutcomes.filter { $0.status == .failed }.count) fail")
                                                 .font(.footnote)
                                                 .foregroundStyle(.orange)
                                         }
                                     }
+                                    
                                     Spacer()
                                     HStack(spacing: 8) {
                                         Button {
