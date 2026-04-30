@@ -329,8 +329,8 @@ final class GrammarAnalyzer {
     }
 
     private func parseJSONFeedback(from raw: String) -> ParsedFeedback? {
-        guard let data = raw.data(using: .utf8) else { return nil }
-        
+        let cleanedRaw = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let data = cleanedRaw.data(using: .utf8) else { return nil }
         print("raw data: \(data)")
         do {
             // FIRST TRY: DIRECTLY PARSE PURE TOEFL JSON ✅
@@ -373,7 +373,8 @@ final class GrammarAnalyzer {
                 guard let content = aiResponse.choices.first?.message.content else {
                     return nil
                 }
-                guard let contentData = content.data(using: .utf8) else {
+                let cleanedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let contentData = cleanedContent.data(using: .utf8) else {
                     return nil
                 }
                 

@@ -567,52 +567,52 @@ private struct HistoryRecordDetailView: View {
     }
 }
 
-struct NativeMacTextView: NSViewRepresentable {
-    let text: String
-    
-    func makeNSView(context: Context) -> NSTextView {
-        let textView = NSTextView()
-        textView.string = text
-        textView.isEditable = false
-        textView.isSelectable = true
-        textView.drawsBackground = false
-        textView.font = .systemFont(ofSize: 13)
-        return textView
-    }
-    
-    func updateNSView(_ nsView: NSTextView, context: Context) {
-        nsView.string = text
-    }
-}
-
-struct NativeTextView: NSViewRepresentable {
-    let text: String
-    
-    func makeNSView(context: Context) -> NSTextView {
-        let textView = NSTextView()
-        textView.string = text
-        textView.isEditable = false
-        textView.isSelectable = true
-        
-        textView.isContinuousSpellCheckingEnabled = true
-        textView.isGrammarCheckingEnabled = true
-        
-        textView.drawsBackground = true
-        textView.backgroundColor = NSColor(red: 0.9, green: 0.9, blue: 0.9, alpha: 0.1)
-        textView.font = .systemFont(ofSize: 14)
-        textView.textContainerInset = NSSize(width: 8, height: 8)
-        textView.wantsLayer = true
-        textView.layer?.cornerRadius = 6
-        
-        return textView
-    }
-    
-    func updateNSView(_ nsView: NSTextView, context: Context) {
-        if nsView.string != text {
-            nsView.string = text
-        }
-    }
-}
+//struct NativeMacTextView: NSViewRepresentable {
+//    let text: String
+//    
+//    func makeNSView(context: Context) -> NSTextView {
+//        let textView = NSTextView()
+//        textView.string = text
+//        textView.isEditable = false
+//        textView.isSelectable = true
+//        textView.drawsBackground = false
+//        textView.font = .systemFont(ofSize: 13)
+//        return textView
+//    }
+//    
+//    func updateNSView(_ nsView: NSTextView, context: Context) {
+//        nsView.string = text
+//    }
+//}
+//
+//struct NativeTextView: NSViewRepresentable {
+//    let text: String
+//    
+//    func makeNSView(context: Context) -> NSTextView {
+//        let textView = NSTextView()
+//        textView.string = text
+//        textView.isEditable = false
+//        textView.isSelectable = true
+//        
+//        textView.isContinuousSpellCheckingEnabled = true
+//        textView.isGrammarCheckingEnabled = true
+//        
+//        textView.drawsBackground = true
+//        textView.backgroundColor = NSColor(red: 0.9, green: 0.9, blue: 0.9, alpha: 0.1)
+//        textView.font = .systemFont(ofSize: 14)
+//        textView.textContainerInset = NSSize(width: 8, height: 8)
+//        textView.wantsLayer = true
+//        textView.layer?.cornerRadius = 6
+//        
+//        return textView
+//    }
+//    
+//    func updateNSView(_ nsView: NSTextView, context: Context) {
+//        if nsView.string != text {
+//            nsView.string = text
+//        }
+//    }
+//}
 
 // MARK: - FIX Compiler Error
 private struct GrammarIssueRow: View {
